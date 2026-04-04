@@ -24,15 +24,21 @@ jest.mock('expo-image-picker', () => ({
 }));
 
 jest.mock('./src/services/url-import', () => ({
-  importRecipeFromUrl: jest.fn(async (sourceUrl: string) => ({
-    title: 'Cacio E Pepe',
-    sourceType: 'url',
-    sourceUrl,
-    sourcePhotoUris: [],
-    ingredients: ['12 ounces spaghetti', '2 cups pecorino romano'],
-    instructions: ['Cook the pasta.', 'Toss with cheese and pepper.'],
-    status: 'needs_review',
-  })),
+  importRecipeFromUrl: jest.fn(async (sourceUrl: string) => {
+    if (sourceUrl.includes('not-a-recipe')) {
+      throw new Error('This link does not appear to contain a recipe.');
+    }
+
+    return {
+      title: 'Cacio E Pepe',
+      sourceType: 'url',
+      sourceUrl,
+      sourcePhotoUris: [],
+      ingredients: ['12 ounces spaghetti', '2 cups pecorino romano'],
+      instructions: ['Cook the pasta.', 'Toss with cheese and pepper.'],
+      status: 'needs_review',
+    };
+  }),
 }));
 
 jest.mock('./src/services/photo-import', () => ({
@@ -116,6 +122,26 @@ describe('Recipe Organizer app', () => {
     expect(screen.getByDisplayValue('4')).toBeTruthy();
     expect(screen.getByText('Review import')).toBeTruthy();
     expect(screen.getByText('Confirm recipe')).toBeTruthy();
+  });
+
+  it('shows retry-oriented import feedback for a non-recipe link instead of a review draft', async () => {
+    render(<App />);
+
+    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+
+    fireEvent.press(screen.getByText('Add'));
+    fireEvent.changeText(
+      screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
+      'https://example.com/not-a-recipe'
+    );
+    fireEvent.press(screen.getByText('Create review draft'));
+
+    expect(await screen.findByText('Recipe link import needs attention')).toBeTruthy();
+    expect(screen.getByText('This link does not appear to contain a recipe.')).toBeTruthy();
+    expect(screen.getByText('Try another link')).toBeTruthy();
+    expect(screen.queryByText('Review import')).toBeNull();
   });
 
   it('keeps the add review flow inside a scroll view so lower controls remain reachable', async () => {

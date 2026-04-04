@@ -15,6 +15,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { CloudSyncStatus } from './src/components/CloudSyncStatus';
+import { ImportFeedbackCard } from './src/components/ImportFeedbackCard';
+import {
+  getImportFallbackGuidance,
+  getImportFeedbackTitle,
+  getImportRetryLabel,
+  type ImportFeedbackSourceType,
+} from './src/lib/import-feedback';
+import { createRecipeBookRepository, createSupabaseRecipeBookPersistence } from './src/lib/recipe-book-repository';
+import { supabase } from './src/lib/supabase';
 import { importRecipeFromPhoto } from './src/services/photo-import';
 import { importRecipeFromUrl } from './src/services/url-import';
 import {
@@ -42,8 +52,12 @@ type EditableReviewDraft = RecipeDraft & {
 
 export default function App() {
   const isTestEnv = process.env.NODE_ENV === 'test';
+  const cloudRepository = useMemo(
+    () => (supabase ? createRecipeBookRepository(createSupabaseRecipeBookPersistence(supabase)) : null),
+    []
+  );
   const [state, dispatch] = useReducer(recipeBookReducer, initialSeedState);
-  const [hydrated, setHydrated] = useState(isTestEnv);
+  const [hydrated, setHydrated] = useState(isTestEnv || !cloudRepository);
   const [signedIn, setSignedIn] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('recipes');
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
@@ -60,9 +74,12 @@ export default function App() {
   const [isImportingPhoto, setIsImportingPhoto] = useState(false);
   const [reviewDraft, setReviewDraft] = useState<EditableReviewDraft | null>(null);
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastImportSourceType, setLastImportSourceType] = useState<ImportFeedbackSourceType | null>(null);
+  const [lastPhotoMode, setLastPhotoMode] = useState<'camera' | 'library'>('library');
 
   useEffect(() => {
-    if (isTestEnv) {
+    if (isTestEnv || cloudRepository) {
       return;
     }
 
@@ -89,17 +106,51 @@ export default function App() {
     return () => {
       mounted = false;
     };
-  }, [isTestEnv]);
+  }, [cloudRepository, isTestEnv]);
 
   useEffect(() => {
-    if (!hydrated) {
+    if (!hydrated || cloudRepository) {
       return;
     }
 
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch(() => {
       // Ignore local persistence failures and keep the in-memory session usable.
     });
-  }, [hydrated, state]);
+  }, [cloudRepository, hydrated, state]);
+
+  useEffect(() => {
+    if (!signedIn || !cloudRepository) {
+      return;
+    }
+
+    let mounted = true;
+    setHydrated(false);
+    setSyncError(null);
+
+    cloudRepository
+      .loadState()
+      .then((nextState) => {
+        if (mounted) {
+          dispatch({ type: 'state/hydrated', payload: nextState });
+        }
+      })
+      .catch((error) => {
+        if (mounted) {
+          setSyncError(
+            error instanceof Error ? error.message : 'We could not load your shared cloud library right now.'
+          );
+        }
+      })
+      .finally(() => {
+        if (mounted) {
+          setHydrated(true);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [cloudRepository, signedIn]);
 
   const visibleRecipes = useMemo(() => selectFilteredRecipes(state, searchQuery), [searchQuery, state]);
   const selectedRecipe = state.recipes.find((recipe) => recipe.id === selectedRecipeId) ?? null;
@@ -123,21 +174,32 @@ export default function App() {
     setSignInError(null);
   };
 
-  const handleCreateGroup = () => {
+  const handleCreateGroup = async () => {
     const trimmed = newGroupName.trim();
 
     if (!trimmed) {
       return;
     }
 
-    dispatch({
-      type: 'group/created',
-      payload: { id: `group-${Date.now()}`, name: trimmed },
-    });
-    setNewGroupName('');
+    try {
+      if (cloudRepository) {
+        const nextState = await cloudRepository.createGroup(trimmed);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+      } else {
+        dispatch({
+          type: 'group/created',
+          payload: { id: `group-${Date.now()}`, name: trimmed },
+        });
+      }
+
+      setNewGroupName('');
+      setSyncError(null);
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'We could not create that group.');
+    }
   };
 
-  const handleRenameGroup = () => {
+  const handleRenameGroup = async () => {
     if (!selectedGroup) {
       return;
     }
@@ -147,11 +209,22 @@ export default function App() {
       return;
     }
 
-    dispatch({
-      type: 'group/renamed',
-      payload: { id: selectedGroup.id, name: trimmed },
-    });
-    setRenameGroupName('');
+    try {
+      if (cloudRepository) {
+        const nextState = await cloudRepository.renameGroup(selectedGroup.id, trimmed);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+      } else {
+        dispatch({
+          type: 'group/renamed',
+          payload: { id: selectedGroup.id, name: trimmed },
+        });
+      }
+
+      setRenameGroupName('');
+      setSyncError(null);
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'We could not rename that group.');
+    }
   };
 
   const beginUrlReview = async () => {
@@ -160,6 +233,7 @@ export default function App() {
       return;
     }
 
+    setLastImportSourceType('url');
     setImportError(null);
     setIsImportingUrl(true);
 
@@ -178,6 +252,8 @@ export default function App() {
   };
 
   const beginPhotoReview = async (mode: 'camera' | 'library') => {
+    setLastImportSourceType('photo');
+    setLastPhotoMode(mode);
     setImportError(null);
     setIsImportingPhoto(true);
 
@@ -222,7 +298,7 @@ export default function App() {
     }
   };
 
-  const handleSaveRecipe = () => {
+  const handleSaveRecipe = async () => {
     if (!reviewDraft) {
       return;
     }
@@ -245,28 +321,40 @@ export default function App() {
       return;
     }
 
-    if (editingRecipeId) {
-      dispatch({
-        type: 'recipe/updated',
-        payload: {
-          recipeId: editingRecipeId,
-          draft: normalizedDraft,
-          groupIds: reviewDraft.selectedGroupIds,
-        },
-      });
-    } else {
-      dispatch({
-        type: 'recipe/imported',
-        payload: {
-          draft: normalizedDraft,
-          groupIds: reviewDraft.selectedGroupIds,
-        },
-      });
+    try {
+      if (cloudRepository) {
+        const nextState = editingRecipeId
+          ? await cloudRepository.updateRecipe(editingRecipeId, normalizedDraft, reviewDraft.selectedGroupIds)
+          : await cloudRepository.importRecipe(normalizedDraft, reviewDraft.selectedGroupIds);
+
+        dispatch({ type: 'state/hydrated', payload: nextState });
+      } else if (editingRecipeId) {
+        dispatch({
+          type: 'recipe/updated',
+          payload: {
+            recipeId: editingRecipeId,
+            draft: normalizedDraft,
+            groupIds: reviewDraft.selectedGroupIds,
+          },
+        });
+      } else {
+        dispatch({
+          type: 'recipe/imported',
+          payload: {
+            draft: normalizedDraft,
+            groupIds: reviewDraft.selectedGroupIds,
+          },
+        });
+      }
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'We could not save that recipe.');
+      return;
     }
 
     setReviewDraft(null);
     setEditingRecipeId(null);
     setUrlInput('');
+    setImportError(null);
     setSelectedGroupId(reviewDraft.selectedGroupIds[0] ?? null);
     setActiveTab(reviewDraft.selectedGroupIds.length > 0 ? 'groups' : 'recipes');
   };
@@ -294,12 +382,52 @@ export default function App() {
     setActiveTab('add');
   };
 
-  const handleDeleteRecipe = (recipeId: string) => {
-    dispatch({
-      type: 'recipe/deleted',
-      payload: { recipeId },
-    });
-    setSelectedRecipeId(null);
+  const handleDeleteRecipe = async (recipeId: string) => {
+    try {
+      if (cloudRepository) {
+        const nextState = await cloudRepository.deleteRecipe(recipeId);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+      } else {
+        dispatch({
+          type: 'recipe/deleted',
+          payload: { recipeId },
+        });
+      }
+
+      setSelectedRecipeId(null);
+      setSyncError(null);
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'We could not delete that recipe.');
+    }
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    try {
+      if (cloudRepository) {
+        const nextState = await cloudRepository.deleteGroup(groupId);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+      } else {
+        dispatch({ type: 'group/deleted', payload: { id: groupId } });
+      }
+
+      if (selectedGroupId === groupId) {
+        setSelectedGroupId(null);
+      }
+      setSyncError(null);
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'We could not delete that group.');
+    }
+  };
+
+  const handleRetryImport = () => {
+    if (lastImportSourceType === 'url') {
+      void beginUrlReview();
+      return;
+    }
+
+    if (lastImportSourceType === 'photo') {
+      void beginPhotoReview(lastPhotoMode);
+    }
   };
 
   if (!signedIn) {
@@ -335,11 +463,33 @@ export default function App() {
                 <Text style={styles.primaryButtonLabel}>Continue to library</Text>
               </Pressable>
               <Text style={styles.supportText}>
-                Local MVP mode is enabled until Supabase credentials are added.
+                {cloudRepository
+                  ? 'Cloud sync is enabled for the shared household library.'
+                  : 'Local MVP mode is enabled until Supabase credentials are added.'}
               </Text>
             </View>
           </View>
         </LinearGradient>
+      </SafeAreaView>
+    );
+  }
+
+  if (!hydrated) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="dark" />
+        <View style={styles.appShell}>
+          <HeaderBar />
+          <View style={styles.panel}>
+            <CloudSyncStatus
+              state={syncError ? 'error' : 'loading'}
+              title={syncError ? 'Sync paused' : 'Loading your shared recipe library'}
+              message={
+                syncError ?? 'We’re syncing your recipes, groups, and saved imports from Supabase.'
+              }
+            />
+          </View>
+        </View>
       </SafeAreaView>
     );
   }
@@ -359,6 +509,13 @@ export default function App() {
         {activeTab === 'recipes' ? (
           <ScrollView contentContainerStyle={styles.screenContent}>
             <Text style={styles.sectionTitle}>Recipes</Text>
+            {cloudRepository && !syncError ? (
+              <CloudSyncStatus
+                state="success"
+                title="Shared library in sync"
+                message="Your recipes and groups are saving to Supabase and will be available when you reopen the app."
+              />
+            ) : null}
             <TextInput
               placeholder="Search recipes or groups"
               placeholderTextColor="#8a7866"
@@ -411,6 +568,7 @@ export default function App() {
                 <Text style={styles.secondaryButtonLabel}>Add</Text>
               </Pressable>
             </View>
+            {syncError ? <Text style={styles.errorText}>{syncError}</Text> : null}
 
             {state.groups.map((group) => (
               <Pressable key={group.id} style={styles.groupRow} onPress={() => setSelectedGroupId(group.id)}>
@@ -419,7 +577,7 @@ export default function App() {
                   <Text style={styles.groupRowMeta}>{groupedRecipeCount(group.id)} recipes</Text>
                 </View>
                 <Pressable
-                  onPress={() => dispatch({ type: 'group/deleted', payload: { id: group.id } })}
+                  onPress={() => handleDeleteGroup(group.id)}
                   hitSlop={8}
                 >
                   <Text style={styles.destructiveAction}>Delete</Text>
@@ -463,17 +621,25 @@ export default function App() {
             {!reviewDraft ? (
               <>
                 <View style={styles.panel}>
-                  <Text style={styles.panelTitle}>From link</Text>
-                  <Text style={styles.panelBody}>Paste a recipe URL and turn it into a review draft before saving.</Text>
-                  <TextInput
+                <Text style={styles.panelTitle}>From link</Text>
+                <Text style={styles.panelBody}>Paste a recipe URL and turn it into a review draft before saving.</Text>
+                <TextInput
                     autoCapitalize="none"
                     placeholder="https://example.com/cacio-e-pepe"
                     placeholderTextColor="#8a7866"
                     style={styles.input}
-                    value={urlInput}
-                    onChangeText={setUrlInput}
-                  />
-                  {importError ? <Text style={styles.errorText}>{importError}</Text> : null}
+                  value={urlInput}
+                  onChangeText={setUrlInput}
+                />
+                  {importError && lastImportSourceType === 'url' ? (
+                    <ImportFeedbackCard
+                      title={getImportFeedbackTitle('url')}
+                      message={importError}
+                      guidance={getImportFallbackGuidance('url')}
+                      primaryAction={{ label: getImportRetryLabel('url'), onPress: handleRetryImport }}
+                      secondaryAction={{ label: 'Dismiss', onPress: () => setImportError(null) }}
+                    />
+                  ) : null}
                   <Pressable style={styles.primaryButton} onPress={beginUrlReview}>
                     <Text style={styles.primaryButtonLabel}>
                       {isImportingUrl ? 'Importing recipe…' : 'Create review draft'}
@@ -483,7 +649,7 @@ export default function App() {
                 <View style={styles.panel}>
                   <Text style={styles.panelTitle}>From photo</Text>
                   <Text style={styles.panelBody}>Capture cookbook pages or import them from your library.</Text>
-                  <View style={styles.actionRow}>
+                <View style={styles.actionRow}>
                     <Pressable style={styles.secondaryButton} onPress={() => beginPhotoReview('camera')}>
                       <Text style={styles.secondaryButtonLabel}>
                         {isImportingPhoto ? 'Importing photo…' : 'Use camera'}
@@ -495,6 +661,15 @@ export default function App() {
                       </Text>
                     </Pressable>
                   </View>
+                  {importError && lastImportSourceType === 'photo' ? (
+                    <ImportFeedbackCard
+                      title={getImportFeedbackTitle('photo')}
+                      message={importError}
+                      guidance={getImportFallbackGuidance('photo')}
+                      primaryAction={{ label: getImportRetryLabel('photo'), onPress: handleRetryImport }}
+                      secondaryAction={{ label: 'Dismiss', onPress: () => setImportError(null) }}
+                    />
+                  ) : null}
                 </View>
               </>
             ) : (

@@ -11,6 +11,8 @@ type RecipeNormalizationInput = {
 };
 
 type RecipeNormalizationOutput = {
+  isRecipe?: boolean;
+  error?: string;
   title?: string;
   description?: string;
   ingredients?: string[];
@@ -48,6 +50,10 @@ export async function importRecipeFromUrl(
       rawText,
       pageTitle,
     });
+
+    if (normalized?.isRecipe === false) {
+      throw new Error(normalized.error ?? 'This link does not appear to contain a recipe.');
+    }
 
     if (normalized?.title && normalized.ingredients?.length && normalized.instructions?.length) {
       return {
@@ -101,7 +107,18 @@ async function normalizeRecipeWithRemoteFunction(
   });
 
   if (!response.ok) {
-    return null;
+    let errorMessage = 'We could not import that recipe link right now.';
+
+    try {
+      const payload = (await response.json()) as { error?: string };
+      if (payload.error) {
+        errorMessage = payload.error;
+      }
+    } catch {
+      // Leave the default message in place when the response body is not JSON.
+    }
+
+    throw new Error(errorMessage);
   }
 
   return (await response.json()) as RecipeNormalizationOutput;

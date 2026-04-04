@@ -218,4 +218,29 @@ describe('importRecipeFromUrl', () => {
     expect(draft.ingredients).toEqual(['1 lb ground chicken', '1 cup shredded carrots']);
     expect(draft.instructions).toEqual(['Cook the chicken.', 'Assemble the bowls.']);
   });
+
+  it('throws a friendly error when AI determines the content is not a recipe', async () => {
+    const normalizer = jest.fn(async () => ({
+      isRecipe: false,
+      error: 'This link does not appear to contain a recipe.',
+    }));
+
+    await expect(
+      importRecipeFromUrl('https://www.instagram.com/reel/baseball-highlights/', {
+        fetcher: async () =>
+          new Response(
+            `
+              <html>
+                <head>
+                  <meta property="og:title" content="Baseball Highlights" />
+                  <meta property="og:description" content="Fastball, strikeout, scoreboard, walk-off reactions." />
+                </head>
+              </html>
+            `,
+            { status: 200 }
+          ),
+        normalizer,
+      })
+    ).rejects.toThrow('This link does not appear to contain a recipe.');
+  });
 });
