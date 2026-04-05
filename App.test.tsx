@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { AppState, type AppStateStatus } from 'react-native';
 
 const mockCloudState = {
   groups: [
@@ -130,7 +131,35 @@ jest.mock('./src/services/photo-import', () => ({
 
 import App from './App';
 
+async function pressPrimaryTab(label: 'Recipes' | 'Groups' | 'Add') {
+  const initialLoadCount = mockRepository.loadState.mock.calls.length;
+
+  await act(async () => {
+    fireEvent.press(screen.getAllByText(label)[0]);
+    await Promise.resolve();
+  });
+
+  await waitFor(() => {
+    expect(mockRepository.loadState.mock.calls.length).toBeGreaterThan(initialLoadCount);
+  });
+}
+
 describe('Recipe Organizer app', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRepository.loadState.mockResolvedValue(mockCloudState);
+    mockRepository.createGroup.mockResolvedValue(mockCloudState);
+    mockRepository.renameGroup.mockResolvedValue(mockCloudState);
+    mockRepository.deleteGroup.mockResolvedValue(mockCloudState);
+    mockRepository.importRecipe.mockResolvedValue(importedCloudState);
+    mockRepository.updateRecipe.mockResolvedValue(mockCloudState);
+    mockRepository.deleteRecipe.mockResolvedValue({
+      ...mockCloudState,
+      recipes: [],
+      memberships: [],
+    });
+  });
+
   it('shows the household sign-in gate before the library', () => {
     render(<App />);
 
@@ -150,7 +179,7 @@ describe('Recipe Organizer app', () => {
     expect(screen.getAllByText('Groups').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Add').length).toBeGreaterThan(0);
 
-    fireEvent.press(screen.getByText('Add'));
+    await pressPrimaryTab('Add');
     fireEvent.changeText(
       screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
       'https://example.com/cacio-e-pepe'
@@ -170,7 +199,7 @@ describe('Recipe Organizer app', () => {
     fireEvent.press(screen.getByText('Continue to library'));
     expect(await screen.findByText('Shared library in sync')).toBeTruthy();
 
-    fireEvent.press(screen.getAllByText('Add')[0]);
+    await pressPrimaryTab('Add');
     fireEvent.changeText(
       screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
       'https://example.com/cacio-e-pepe'
@@ -193,7 +222,7 @@ describe('Recipe Organizer app', () => {
     fireEvent.press(screen.getByText('Continue to library'));
     expect(await screen.findByText('Shared library in sync')).toBeTruthy();
 
-    fireEvent.press(screen.getAllByText('Add')[0]);
+    await pressPrimaryTab('Add');
     fireEvent.press(screen.getByText('Photo library'));
 
     expect(await screen.findByDisplayValue('Pesto Chicken and Roasted Veggie Farro Bowls')).toBeTruthy();
@@ -210,7 +239,7 @@ describe('Recipe Organizer app', () => {
     fireEvent.press(screen.getByText('Continue to library'));
     expect(await screen.findByText('Shared library in sync')).toBeTruthy();
 
-    fireEvent.press(screen.getAllByText('Add')[0]);
+    await pressPrimaryTab('Add');
     fireEvent.changeText(
       screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
       'https://example.com/not-a-recipe'
@@ -242,11 +271,64 @@ describe('Recipe Organizer app', () => {
 
     expect(await screen.findByTestId('recipes-scroll-view')).toBeTruthy();
 
-    fireEvent.press(screen.getAllByText('Groups')[0]);
+    await pressPrimaryTab('Groups');
     expect(screen.getByTestId('groups-scroll-view')).toBeTruthy();
 
-    fireEvent.press(screen.getAllByText('Add')[0]);
+    await pressPrimaryTab('Add');
     expect(screen.getByTestId('add-scroll-view')).toBeTruthy();
+  });
+
+  it('refreshes cloud state when returning to top-level tabs', async () => {
+    render(<App />);
+
+    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    mockRepository.loadState.mockClear();
+
+    await pressPrimaryTab('Groups');
+    await waitFor(() => expect(mockRepository.loadState).toHaveBeenCalledTimes(1));
+
+    await pressPrimaryTab('Add');
+    await waitFor(() => expect(mockRepository.loadState).toHaveBeenCalledTimes(2));
+
+    await pressPrimaryTab('Recipes');
+    await waitFor(() => expect(mockRepository.loadState).toHaveBeenCalledTimes(3));
+  });
+
+  it('refreshes cloud state when the app returns to the foreground', async () => {
+    let appStateListener: ((state: AppStateStatus) => void) | undefined;
+    const addEventListenerSpy = jest
+      .spyOn(AppState, 'addEventListener')
+      .mockImplementation((type, listener) => {
+        if (type === 'change') {
+          appStateListener = listener;
+        }
+
+        return { remove: jest.fn() };
+      });
+
+    render(<App />);
+
+    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    mockRepository.loadState.mockClear();
+
+    expect(appStateListener).toBeDefined();
+
+    await act(async () => {
+      appStateListener?.('background');
+      appStateListener?.('active');
+    });
+
+    await waitFor(() => expect(mockRepository.loadState).toHaveBeenCalledTimes(1));
+
+    addEventListenerSpy.mockRestore();
   });
 
   it('keeps the Add review draft free of the landing refresh status copy', async () => {
@@ -257,7 +339,7 @@ describe('Recipe Organizer app', () => {
     fireEvent.press(screen.getByText('Continue to library'));
     expect(await screen.findByText('Shared library in sync')).toBeTruthy();
 
-    fireEvent.press(screen.getAllByText('Add')[0]);
+    await pressPrimaryTab('Add');
     fireEvent.changeText(
       screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
       'https://example.com/cacio-e-pepe'
@@ -275,7 +357,7 @@ describe('Recipe Organizer app', () => {
     fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
     fireEvent.press(screen.getByText('Continue to library'));
     expect(await screen.findByText('Shared library in sync')).toBeTruthy();
-    fireEvent.press(screen.getAllByText('Add')[0]);
+    await pressPrimaryTab('Add');
     fireEvent.changeText(
       screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
       'https://example.com/cacio-e-pepe'
@@ -292,7 +374,7 @@ describe('Recipe Organizer app', () => {
     fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
     fireEvent.press(screen.getByText('Continue to library'));
     expect(await screen.findByText('Shared library in sync')).toBeTruthy();
-    fireEvent.press(screen.getAllByText('Add')[0]);
+    await pressPrimaryTab('Add');
     fireEvent.changeText(
       screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
       'https://example.com/cacio-e-pepe'

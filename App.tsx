@@ -2,9 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   Alert,
+  AppState,
   Linking,
   RefreshControl,
   ScrollView,
@@ -81,6 +82,9 @@ export default function App() {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [lastImportSourceType, setLastImportSourceType] = useState<ImportFeedbackSourceType | null>(null);
   const [lastPhotoMode, setLastPhotoMode] = useState<'camera' | 'library'>('library');
+  const previousRefreshTargetRef = useRef<string | null>(null);
+  const skipNextAutoRefreshTargetRef = useRef<string | null>(null);
+  const lastAppStateRef = useRef(AppState.currentState);
 
   const markCloudSyncSuccess = () => {
     setLastSyncedAt(new Date().toISOString());
@@ -167,6 +171,8 @@ export default function App() {
     };
   }, [cloudRepository, isTestEnv, signedIn]);
 
+  const refreshTarget = activeTab === 'add' && reviewDraft ? 'add-review' : activeTab;
+
   const reloadCloudState = async ({ showRefreshing = false }: { showRefreshing?: boolean } = {}) => {
     if (!cloudRepository) {
       return;
@@ -190,6 +196,47 @@ export default function App() {
       }
     }
   };
+
+  useEffect(() => {
+    const previousRefreshTarget = previousRefreshTargetRef.current;
+    previousRefreshTargetRef.current = refreshTarget;
+
+    if (!signedIn || !cloudRepository || !hydrated || !previousRefreshTarget || previousRefreshTarget === refreshTarget) {
+      return;
+    }
+
+    if (refreshTarget === 'add-review') {
+      return;
+    }
+
+    if (skipNextAutoRefreshTargetRef.current === refreshTarget) {
+      skipNextAutoRefreshTargetRef.current = null;
+      return;
+    }
+
+    void reloadCloudState();
+  }, [cloudRepository, hydrated, refreshTarget, signedIn]);
+
+  useEffect(() => {
+    if (!signedIn || !cloudRepository) {
+      return;
+    }
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      const wasBackgrounded = /inactive|background/.test(lastAppStateRef.current);
+      lastAppStateRef.current = nextAppState;
+
+      if (!wasBackgrounded || nextAppState !== 'active' || !hydrated || refreshTarget === 'add-review') {
+        return;
+      }
+
+      void reloadCloudState();
+    });
+
+    return () => {
+      subscription?.remove?.();
+    };
+  }, [cloudRepository, hydrated, refreshTarget, signedIn]);
 
   const visibleRecipes = useMemo(() => selectFilteredRecipes(state, searchQuery), [searchQuery, state]);
   const selectedRecipe = state.recipes.find((recipe) => recipe.id === selectedRecipeId) ?? null;
@@ -402,7 +449,9 @@ export default function App() {
     setUrlInput('');
     setImportError(null);
     setSelectedGroupId(reviewDraft.selectedGroupIds[0] ?? null);
-    setActiveTab(reviewDraft.selectedGroupIds.length > 0 ? 'groups' : 'recipes');
+    const nextTab = reviewDraft.selectedGroupIds.length > 0 ? 'groups' : 'recipes';
+    skipNextAutoRefreshTargetRef.current = nextTab;
+    setActiveTab(nextTab);
   };
 
   const beginRecipeEdit = (recipe: RecipeRecord) => {
