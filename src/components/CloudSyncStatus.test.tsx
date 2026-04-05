@@ -9,6 +9,10 @@ describe('CloudSyncStatus', () => {
     expect(screen.getByText('Syncing your library')).toBeTruthy();
     expect(screen.getByText('Checking Supabase for updates.')).toBeTruthy();
     expect(screen.getByTestId('cloud-sync-status-indicator')).toBeTruthy();
+    expect(screen.getByTestId('cloud-sync-status-root')).toHaveStyle({
+      flexDirection: 'row',
+      alignItems: 'center',
+    });
   });
 
   it('renders an error state with the provided message', () => {
@@ -25,5 +29,8 @@ describe('CloudSyncStatus', () => {
     expect(screen.getByText('In sync')).toBeTruthy();
     expect(screen.getByText('Everything is up to date.')).toBeTruthy();
     expect(screen.getByTestId('cloud-sync-status-badge')).toBeTruthy();
+    expect(screen.getByTestId('cloud-sync-status-root')).toHaveStyle({
+      backgroundColor: '#f3faf4',
+    });
   });
 });

@@ -15,6 +15,8 @@ describe('importRecipeFromUrl', () => {
                     "name": "Cacio e Pepe",
                     "image": ["https://images.example.com/cacio.jpg"],
                     "recipeYield": "4",
+                    "prepTime": "PT15M",
+                    "cookTime": "PT20M",
                     "recipeIngredient": [
                       "12 ounces spaghetti",
                       "2 cups Pecorino Romano",
@@ -37,6 +39,8 @@ describe('importRecipeFromUrl', () => {
     expect(draft.title).toBe('Cacio e Pepe');
     expect(draft.heroImageUri).toBe('https://images.example.com/cacio.jpg');
     expect(draft.servings).toBe('4');
+    expect(draft.prepTime).toBe('15 mins');
+    expect(draft.cookTime).toBe('20 mins');
     expect(draft.ingredients).toEqual([
       '12 ounces spaghetti',
       '2 cups Pecorino Romano',

@@ -19,6 +19,8 @@ type RecipeNormalizationOutput = {
   ingredients?: string[];
   instructions?: string[];
   servings?: string;
+  prepTime?: string;
+  cookTime?: string;
 };
 
 type ImportOptions = {
@@ -62,6 +64,8 @@ export async function importRecipeFromPhoto(
     ingredients: normalized.ingredients,
     instructions: normalized.instructions,
     servings: normalized.servings,
+    prepTime: normalized.prepTime,
+    cookTime: normalized.cookTime,
   };
 }
 

@@ -9,6 +9,7 @@ describe('recipe book repository', () => {
     const state = await repository.loadState();
 
     expect(state.groups.map((group) => group.name)).toEqual(['Weeknight', 'Weekend', 'Healthy']);
+    expect(state.groups.every((group) => group.isFavorite === false)).toBe(true);
     expect(state.recipes).toEqual([]);
     expect(state.memberships).toEqual([]);
   });
@@ -39,6 +40,43 @@ describe('recipe book repository', () => {
       },
     ]);
   });
+
+  it('persists and reloads recipe prep and cook time values', async () => {
+    const persistence = createInMemoryPersistence();
+    const repository = createRecipeBookRepository(persistence);
+    const initial = await repository.loadState();
+    const weeknightGroupId = initial.groups.find((group) => group.name === 'Weeknight')!.id;
+
+    const draft: RecipeDraft = {
+      ...createRecipeBookDraftFromUrl('https://example.com/slow-cooker-chili'),
+      title: 'Slow Cooker Chili',
+      prepTime: '20 mins',
+      cookTime: '6 hours',
+      status: 'ready',
+    };
+
+    const state = await repository.importRecipe(draft, [weeknightGroupId]);
+
+    expect(state.recipes[0]).toMatchObject({
+      prepTime: '20 mins',
+      cookTime: '6 hours',
+    });
+  });
+
+  it('persists and reloads a group favorite state from the cloud-backed repository', async () => {
+    const persistence = createInMemoryPersistence();
+    const repository = createRecipeBookRepository(persistence);
+
+    const initial = await repository.loadState();
+    const weekendGroupId = initial.groups.find((group) => group.name === 'Weekend')!.id;
+
+    await (repository as any).setGroupFavorite(weekendGroupId, true);
+
+    const reloaded = await repository.loadState();
+    const weekendGroup = reloaded.groups.find((group) => group.id === weekendGroupId);
+
+    expect(weekendGroup?.isFavorite).toBe(true);
+  });
 });
 
 function createInMemoryPersistence(): RecipeBookPersistence {
@@ -48,6 +86,7 @@ function createInMemoryPersistence(): RecipeBookPersistence {
     id: string;
     householdId: string;
     name: string;
+    isFavorite: boolean;
     createdAt: string;
     updatedAt: string;
   }[] = [];
@@ -63,6 +102,8 @@ function createInMemoryPersistence(): RecipeBookPersistence {
     ingredients: string[];
     instructions: string[];
     servings?: string;
+    prepTime?: string;
+    cookTime?: string;
     status: RecipeDraft['status'];
     createdAt: string;
     updatedAt: string;
@@ -89,6 +130,7 @@ function createInMemoryPersistence(): RecipeBookPersistence {
         id: makeId('group'),
         householdId,
         name,
+        isFavorite: false,
         createdAt: now,
         updatedAt: now,
       });
@@ -97,6 +139,13 @@ function createInMemoryPersistence(): RecipeBookPersistence {
       const group = groups.find((item) => item.id === groupId);
       if (group) {
         group.name = name;
+        group.updatedAt = now;
+      }
+    },
+    async setGroupFavorite(groupId, isFavorite) {
+      const group = groups.find((item) => item.id === groupId);
+      if (group) {
+        group.isFavorite = isFavorite;
         group.updatedAt = now;
       }
     },
@@ -123,6 +172,8 @@ function createInMemoryPersistence(): RecipeBookPersistence {
         ingredients: draft.ingredients,
         instructions: draft.instructions,
         servings: draft.servings,
+        prepTime: draft.prepTime,
+        cookTime: draft.cookTime,
         status: draft.status,
         createdAt: now,
         updatedAt: now,
@@ -143,6 +194,8 @@ function createInMemoryPersistence(): RecipeBookPersistence {
           ingredients: draft.ingredients,
           instructions: draft.instructions,
           servings: draft.servings,
+          prepTime: draft.prepTime,
+          cookTime: draft.cookTime,
           status: draft.status,
           updatedAt: now,
         });

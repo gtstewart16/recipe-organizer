@@ -20,6 +20,8 @@ describe('recipe book domain', () => {
     expect(draft.ingredients).toHaveLength(3);
     expect(draft.instructions).toHaveLength(3);
     expect(draft.status).toBe('needs_review');
+    expect(draft.prepTime).toBeUndefined();
+    expect(draft.cookTime).toBeUndefined();
   });
 
   it('creates a photo import draft that preserves selected asset paths', () => {
@@ -34,6 +36,32 @@ describe('recipe book domain', () => {
       'file:///cookbook-page-2.jpg',
     ]);
     expect(draft.title).toBe('Cookbook Recipe Draft');
+    expect(draft.heroImageUri).toBe('file:///cookbook-page-1.jpg');
+  });
+
+  it('preserves prep and cook times when importing a recipe into the library', () => {
+    const state = recipeBookReducer(
+      recipeBookReducer(createEmptyRecipeBookState(), {
+        type: 'group/created',
+        payload: { id: 'group-weeknight', name: 'Weeknight' } as any,
+      }),
+      {
+        type: 'recipe/imported',
+        payload: {
+          draft: {
+            ...createRecipeBookDraftFromUrl('https://example.com/slow-cooker-chili'),
+            prepTime: '20 mins',
+            cookTime: '6 hours',
+          },
+          groupIds: ['group-weeknight'],
+        },
+      }
+    );
+
+    expect(state.recipes[0]).toMatchObject({
+      prepTime: '20 mins',
+      cookTime: '6 hours',
+    });
   });
 
   it('saves a reviewed import into the library and supports many groups per recipe', () => {
@@ -43,11 +71,11 @@ describe('recipe book domain', () => {
 
     const withGroups = recipeBookReducer(state, {
       type: 'group/created',
-      payload: { id: breakfastGroupId, name: 'Weeknight' },
+      payload: { id: breakfastGroupId, name: 'Weeknight' } as any,
     });
     const withTwoGroups = recipeBookReducer(withGroups, {
       type: 'group/created',
-      payload: { id: healthyGroupId, name: 'Healthy' },
+      payload: { id: healthyGroupId, name: 'Healthy' } as any,
     });
 
     const imported = recipeBookReducer(withTwoGroups, {
@@ -68,10 +96,37 @@ describe('recipe book domain', () => {
     ]);
   });
 
+  it('defaults created groups to unfavorited and toggles favorite state on and off', () => {
+    const created = recipeBookReducer(createEmptyRecipeBookState(), {
+      type: 'group/created',
+      payload: { id: 'group-weeknight', name: 'Weeknight' } as any,
+    });
+
+    expect(created.groups[0]).toMatchObject({
+      id: 'group-weeknight',
+      name: 'Weeknight',
+      isFavorite: false,
+    });
+
+    const favorited = recipeBookReducer(created, {
+      type: 'group/favoriteToggled',
+      payload: { id: 'group-weeknight', isFavorite: true },
+    } as any);
+
+    expect(favorited.groups[0].isFavorite).toBe(true);
+
+    const unfavorited = recipeBookReducer(favorited, {
+      type: 'group/favoriteToggled',
+      payload: { id: 'group-weeknight', isFavorite: false },
+    } as any);
+
+    expect(unfavorited.groups[0].isFavorite).toBe(false);
+  });
+
   it('deleting a group removes memberships but keeps recipes', () => {
     const base = recipeBookReducer(createEmptyRecipeBookState(), {
       type: 'group/created',
-      payload: { id: 'group-favorites', name: 'Favorites' },
+      payload: { id: 'group-favorites', name: 'Favorites' } as any,
     });
     const withRecipe = recipeBookReducer(base, {
       type: 'recipe/imported',
@@ -94,7 +149,7 @@ describe('recipe book domain', () => {
   it('renames a group without changing its recipe memberships', () => {
     const base = recipeBookReducer(createEmptyRecipeBookState(), {
       type: 'group/created',
-      payload: { id: 'group-weeknight', name: 'Weeknight' },
+      payload: { id: 'group-weeknight', name: 'Weeknight' } as any,
     });
     const withRecipe = recipeBookReducer(base, {
       type: 'recipe/imported',
@@ -117,11 +172,11 @@ describe('recipe book domain', () => {
     const base = recipeBookReducer(
       recipeBookReducer(createEmptyRecipeBookState(), {
         type: 'group/created',
-        payload: { id: 'group-weeknight', name: 'Weeknight' },
+        payload: { id: 'group-weeknight', name: 'Weeknight' } as any,
       }),
       {
         type: 'group/created',
-        payload: { id: 'group-weekend', name: 'Weekend' },
+        payload: { id: 'group-weekend', name: 'Weekend' } as any,
       }
     );
 
@@ -158,11 +213,11 @@ describe('recipe book domain', () => {
     const base = recipeBookReducer(
       recipeBookReducer(createEmptyRecipeBookState(), {
         type: 'group/created',
-        payload: { id: 'group-weeknight', name: 'Weeknight' },
+        payload: { id: 'group-weeknight', name: 'Weeknight' } as any,
       }),
       {
         type: 'group/created',
-        payload: { id: 'group-weekend', name: 'Weekend' },
+        payload: { id: 'group-weekend', name: 'Weekend' } as any,
       }
     );
 
@@ -187,7 +242,7 @@ describe('recipe book domain', () => {
     const state = recipeBookReducer(
       recipeBookReducer(createEmptyRecipeBookState(), {
         type: 'group/created',
-        payload: { id: 'group-weeknight', name: 'Weeknight' },
+        payload: { id: 'group-weeknight', name: 'Weeknight' } as any,
       }),
       {
         type: 'recipe/imported',

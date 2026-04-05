@@ -19,6 +19,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CloudSyncStatus } from './src/components/CloudSyncStatus';
 import { ImportFeedbackCard } from './src/components/ImportFeedbackCard';
 import { InteractivePressable } from './src/components/InteractivePressable';
+import { RecipeDetailScreen } from './src/components/recipe-detail/RecipeDetailScreen';
+import { RecipesHome } from './src/components/recipes-home';
+import { SwipeToDeleteRow } from './src/components/swipe-actions';
 import {
   getImportFallbackGuidance,
   getImportFeedbackTitle,
@@ -34,6 +37,7 @@ import {
   createRecipeBookDraftFromUrl,
   RecipeBookState,
   RecipeDraft,
+  RecipeGroup,
   RecipeRecord,
   recipeBookReducer,
   selectFilteredRecipes,
@@ -239,8 +243,33 @@ export default function App() {
   }, [cloudRepository, hydrated, refreshTarget, signedIn]);
 
   const visibleRecipes = useMemo(() => selectFilteredRecipes(state, searchQuery), [searchQuery, state]);
+  const favoriteGroups = useMemo(
+    () => state.groups.filter((group) => group.isFavorite).sort((left, right) => left.name.localeCompare(right.name)),
+    [state.groups]
+  );
+  const orderedGroups = useMemo(
+    () =>
+      [...state.groups].sort((left, right) => {
+        if (Boolean(left.isFavorite) !== Boolean(right.isFavorite)) {
+          return Number(Boolean(right.isFavorite)) - Number(Boolean(left.isFavorite));
+        }
+
+        return left.name.localeCompare(right.name);
+      }),
+    [state.groups]
+  );
   const selectedRecipe = state.recipes.find((recipe) => recipe.id === selectedRecipeId) ?? null;
   const selectedGroup = state.groups.find((group) => group.id === selectedGroupId) ?? null;
+  const selectedRecipeGroupNames = useMemo(() => {
+    if (!selectedRecipe) {
+      return [];
+    }
+
+    return state.memberships
+      .filter((membership) => membership.recipeId === selectedRecipe.id)
+      .map((membership) => state.groups.find((group) => group.id === membership.groupId)?.name)
+      .filter((groupName): groupName is string => Boolean(groupName));
+  }, [selectedRecipe, state.groups, state.memberships]);
   const groupedRecipeCount = (groupId: string) =>
     state.memberships.filter((membership) => membership.groupId === groupId).length;
 
@@ -405,6 +434,8 @@ export default function App() {
       ingredients: parseMultilineList(reviewDraft.ingredients.join('\n')),
       instructions: parseMultilineList(reviewDraft.instructions.join('\n')),
       servings: reviewDraft.servings?.trim(),
+      prepTime: reviewDraft.prepTime?.trim(),
+      cookTime: reviewDraft.cookTime?.trim(),
       status: 'ready' as const,
     };
 
@@ -469,6 +500,8 @@ export default function App() {
       ingredients: recipe.ingredients,
       instructions: recipe.instructions,
       servings: recipe.servings,
+      prepTime: recipe.prepTime,
+      cookTime: recipe.cookTime,
       status: recipe.status,
       selectedGroupIds,
     });
@@ -499,6 +532,23 @@ export default function App() {
     }
   };
 
+  const confirmDeleteRecipe = (recipe: RecipeRecord) => {
+    Alert.alert(
+      'Delete recipe?',
+      `Are you sure you want to delete “${recipe.title}”? This will remove it from your shared library.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void handleDeleteRecipe(recipe.id);
+          },
+        },
+      ]
+    );
+  };
+
   const handleDeleteGroup = async (groupId: string) => {
     try {
       if (cloudRepository) {
@@ -517,6 +567,43 @@ export default function App() {
       }
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : 'We could not delete that group.');
+    }
+  };
+
+  const confirmDeleteGroup = (group: RecipeGroup) => {
+    Alert.alert(
+      'Delete group?',
+      `Are you sure you want to delete “${group.name}”? Recipes will stay saved, but they will be removed from this group.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void handleDeleteGroup(group.id);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleToggleGroupFavorite = async (group: RecipeGroup) => {
+    const nextIsFavorite = !group.isFavorite;
+
+    try {
+      if (cloudRepository) {
+        const nextState = await cloudRepository.setGroupFavorite(group.id, nextIsFavorite);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
+      } else {
+        dispatch({
+          type: 'group/favoriteToggled',
+          payload: { id: group.id, isFavorite: nextIsFavorite },
+        });
+        setSyncError(null);
+      }
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'We could not update that favorite group.');
     }
   };
 
@@ -617,52 +704,29 @@ export default function App() {
               ) : undefined
             }
           >
-            <Text style={styles.sectionTitle}>Recipes</Text>
             {cloudRepository ? (
               <CloudSyncStatus
                 state={refreshError ? 'error' : isRefreshing ? 'loading' : 'success'}
-                title={refreshError ? 'Refresh paused' : isRefreshing ? 'Refreshing your shared library' : 'Shared library in sync'}
+                title={
+                  refreshError ? 'Refresh paused' : isRefreshing ? 'Refreshing your shared library' : 'Shared library in sync'
+                }
                 message={refreshError ?? formatLastSynced(lastSyncedAt)}
               />
             ) : null}
-            <TextInput
-              placeholder="Search recipes or groups"
-              placeholderTextColor="#8a7866"
-              style={styles.input}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
+            <RecipesHome
+              groups={state.groups}
+              favoriteGroupIds={favoriteGroups.map((group) => group.id)}
+              recipes={visibleRecipes}
+              searchQuery={searchQuery}
+              onSearchQueryChange={setSearchQuery}
+              onGroupPress={(group) => {
+                setSelectedGroupId(group.id);
+                setActiveTab('groups');
+              }}
+              onFavoriteGroupToggle={(group) => void handleToggleGroupFavorite(group)}
+              onRecipeDelete={(recipe) => confirmDeleteRecipe(recipe)}
+              onRecipePress={(recipe) => setSelectedRecipeId(recipe.id)}
             />
-
-            <Text style={styles.sectionLabel}>Groups</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupChipRow}>
-              {state.groups.map((group) => (
-                <InteractivePressable
-                  key={group.id}
-                  style={styles.groupChip}
-                  onPress={() => {
-                    setSelectedGroupId(group.id);
-                    setActiveTab('groups');
-                  }}
-                >
-                  <Text style={styles.groupChipLabel}>{group.name}</Text>
-                </InteractivePressable>
-              ))}
-            </ScrollView>
-
-            <Text style={styles.sectionLabel}>Recent recipes</Text>
-            {visibleRecipes.map((recipe) => (
-              <InteractivePressable
-                key={recipe.id}
-                style={styles.recipeCard}
-                onPress={() => setSelectedRecipeId(recipe.id)}
-              >
-                <Text style={styles.recipeCardTitle}>{recipe.title}</Text>
-                <Text style={styles.recipeCardMeta}>{recipe.servings ? `${recipe.servings} servings` : 'Review-ready recipe'}</Text>
-                <Text style={styles.recipeCardSnippet} numberOfLines={2}>
-                  {recipe.instructions[0]}
-                </Text>
-              </InteractivePressable>
-            ))}
           </ScrollView>
         ) : null}
 
@@ -691,19 +755,41 @@ export default function App() {
             </View>
             {syncError ? <Text style={styles.errorText}>{syncError}</Text> : null}
 
-            {state.groups.map((group) => (
-              <InteractivePressable key={group.id} style={styles.groupRow} onPress={() => setSelectedGroupId(group.id)}>
-                <View>
-                  <Text style={styles.groupRowTitle}>{group.name}</Text>
-                  <Text style={styles.groupRowMeta}>{groupedRecipeCount(group.id)} recipes</Text>
+            {orderedGroups.map((group) => (
+              <SwipeToDeleteRow
+                key={group.id}
+                actionLabel="Delete group"
+                actionTestID={`group-delete-${group.id}`}
+                contentTestID={`group-content-${group.id}`}
+                onAction={() => confirmDeleteGroup(group)}
+              >
+                <View style={styles.groupRow}>
+                  <InteractivePressable style={styles.groupRowMain} onPress={() => setSelectedGroupId(group.id)}>
+                    <View>
+                      <Text style={styles.groupRowTitle}>{group.name}</Text>
+                      <Text style={styles.groupRowMeta}>{groupedRecipeCount(group.id)} recipes</Text>
+                    </View>
+                  </InteractivePressable>
+                  <View style={styles.groupRowActions}>
+                    <InteractivePressable
+                      style={[styles.groupFavoriteButton, group.isFavorite ? styles.groupFavoriteButtonActive : undefined]}
+                      onPress={() => void handleToggleGroupFavorite(group)}
+                      accessibilityLabel={group.isFavorite ? `Remove ${group.name} from favorites` : `Favorite ${group.name}`}
+                      hitSlop={8}
+                      testID={`groups-favorite-button-${group.id}`}
+                    >
+                      <Text
+                        style={[
+                          styles.groupFavoriteButtonLabel,
+                          group.isFavorite ? styles.groupFavoriteButtonLabelActive : undefined,
+                        ]}
+                      >
+                        {group.isFavorite ? '★' : '☆'}
+                      </Text>
+                    </InteractivePressable>
+                  </View>
                 </View>
-                <InteractivePressable
-                  onPress={() => handleDeleteGroup(group.id)}
-                  hitSlop={8}
-                >
-                  <Text style={styles.destructiveAction}>Delete</Text>
-                </InteractivePressable>
-              </InteractivePressable>
+              </SwipeToDeleteRow>
             ))}
 
             {selectedGroup ? (
@@ -722,14 +808,21 @@ export default function App() {
                   </InteractivePressable>
                 </View>
                 {recipesForGroup(state, selectedGroup.id).map((recipe) => (
-                  <InteractivePressable
+                  <SwipeToDeleteRow
                     key={recipe.id}
-                    style={styles.groupRecipeCard}
-                    onPress={() => setSelectedRecipeId(recipe.id)}
+                    actionLabel="Delete recipe"
+                    actionTestID={`group-recipe-delete-${recipe.id}`}
+                    contentTestID={`group-recipe-content-${recipe.id}`}
+                    onAction={() => confirmDeleteRecipe(recipe)}
                   >
-                    <Text style={styles.groupRecipeTitle}>{recipe.title}</Text>
-                    <Text style={styles.groupRecipeMeta}>{recipe.instructions[0]}</Text>
-                  </InteractivePressable>
+                    <InteractivePressable
+                      style={styles.groupRecipeCard}
+                      onPress={() => setSelectedRecipeId(recipe.id)}
+                    >
+                      <Text style={styles.groupRecipeTitle}>{recipe.title}</Text>
+                      <Text style={styles.groupRecipeMeta}>{recipe.instructions[0]}</Text>
+                    </InteractivePressable>
+                  </SwipeToDeleteRow>
                 ))}
               </View>
             ) : null}
@@ -836,6 +929,22 @@ export default function App() {
                   value={reviewDraft.servings ?? ''}
                   onChangeText={(value) => setReviewDraft({ ...reviewDraft, servings: value })}
                 />
+                <View style={styles.inlineComposer}>
+                  <TextInput
+                    style={[styles.input, styles.inlineInput]}
+                    placeholder="Prep time"
+                    placeholderTextColor="#8a7866"
+                    value={reviewDraft.prepTime ?? ''}
+                    onChangeText={(value) => setReviewDraft({ ...reviewDraft, prepTime: value })}
+                  />
+                  <TextInput
+                    style={[styles.input, styles.inlineInput]}
+                    placeholder="Cook time"
+                    placeholderTextColor="#8a7866"
+                    value={reviewDraft.cookTime ?? ''}
+                    onChangeText={(value) => setReviewDraft({ ...reviewDraft, cookTime: value })}
+                  />
+                </View>
                 <EditableListField
                   label="Ingredients"
                   lines={reviewDraft.ingredients}
@@ -895,46 +1004,16 @@ export default function App() {
 
         {selectedRecipe ? (
           <View style={styles.detailOverlay}>
-            <ScrollView style={styles.detailSheet} contentContainerStyle={styles.detailContent}>
-              <View style={styles.detailHeader}>
-                <View>
-                  <Text style={styles.detailTitle}>{selectedRecipe.title}</Text>
-                  <Text style={styles.detailMeta}>
-                    {selectedRecipe.sourceUrl ? 'Linked source included' : 'Cookbook import'} ·{' '}
-                    {selectedRecipe.servings ? `${selectedRecipe.servings} servings` : 'Review-ready'}
-                  </Text>
-                </View>
-                <InteractivePressable onPress={() => setSelectedRecipeId(null)}>
-                  <Text style={styles.secondaryButtonLabel}>Close</Text>
-                </InteractivePressable>
-              </View>
-              <InteractivePressable style={styles.secondaryButton} onPress={() => beginRecipeEdit(selectedRecipe)}>
-                <Text style={styles.secondaryButtonLabel}>Edit recipe</Text>
-              </InteractivePressable>
-              <InteractivePressable style={styles.destructiveButton} onPress={() => handleDeleteRecipe(selectedRecipe.id)}>
-                <Text style={styles.destructiveButtonLabel}>Delete recipe</Text>
-              </InteractivePressable>
-
-              {selectedRecipe.sourceUrl ? (
-                <InteractivePressable onPress={() => Linking.openURL(selectedRecipe.sourceUrl!)}>
-                  <Text style={styles.sourceLink}>Open original recipe</Text>
-                </InteractivePressable>
-              ) : null}
-
-              <Text style={styles.sectionLabel}>Ingredients</Text>
-              {selectedRecipe.ingredients.map((ingredient) => (
-                <Text key={ingredient} style={styles.detailListItem}>
-                  • {ingredient}
-                </Text>
-              ))}
-
-              <Text style={styles.sectionLabel}>Directions</Text>
-              {selectedRecipe.instructions.map((instruction, index) => (
-                <Text key={`${instruction}-${index}`} style={styles.detailListItem}>
-                  {index + 1}. {instruction}
-                </Text>
-              ))}
-            </ScrollView>
+            <RecipeDetailScreen
+              recipe={selectedRecipe}
+              groupNames={selectedRecipeGroupNames}
+              onClose={() => setSelectedRecipeId(null)}
+              onEdit={() => beginRecipeEdit(selectedRecipe)}
+              onDelete={() => confirmDeleteRecipe(selectedRecipe)}
+              onOpenSource={
+                selectedRecipe.sourceUrl ? () => Linking.openURL(selectedRecipe.sourceUrl!) : undefined
+              }
+            />
           </View>
         ) : null}
       </View>
@@ -967,10 +1046,6 @@ function EditableListField({
 function HeaderBar() {
   return (
     <View style={styles.headerBar}>
-      <View>
-        <Text style={styles.eyebrow}>Shared Household</Text>
-        <Text style={styles.headerTitle}>The Kitchen Shelf</Text>
-      </View>
       <View style={styles.headerBadge}>
         <Text style={styles.headerBadgeText}>MVP</Text>
       </View>
@@ -1043,10 +1118,10 @@ function parseMultilineList(value: string): string[] {
 
 function formatLastSynced(value: string | null) {
   if (!value) {
-    return 'Last synced just now.';
+    return 'Last synced just now';
   }
 
-  return `Last synced at ${new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`;
+  return `Last synced at ${new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
 }
 
 const styles = StyleSheet.create({
@@ -1097,13 +1172,9 @@ const styles = StyleSheet.create({
   headerBar: {
     alignItems: 'center',
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     marginBottom: 18,
-  },
-  headerTitle: {
-    color: '#241711',
-    fontSize: 26,
-    fontWeight: '700',
+    minHeight: 18,
   },
   headerBadge: {
     backgroundColor: '#efe1d3',
@@ -1229,45 +1300,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  groupChipRow: {
-    gap: 10,
-  },
-  groupChip: {
-    backgroundColor: '#fffaf5',
-    borderColor: '#e6d5c5',
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  groupChipLabel: {
-    color: '#6d5647',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  recipeCard: {
-    backgroundColor: '#fffaf5',
-    borderColor: '#e7d7c8',
-    borderRadius: 24,
-    borderWidth: 1,
-    gap: 8,
-    padding: 18,
-  },
-  recipeCardTitle: {
-    color: '#241711',
-    fontSize: 21,
-    fontWeight: '700',
-  },
-  recipeCardMeta: {
-    color: '#8a5b3f',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  recipeCardSnippet: {
-    color: '#5d4b3d',
-    fontSize: 15,
-    lineHeight: 22,
-  },
   panel: {
     backgroundColor: '#fffaf5',
     borderColor: '#e7d7c8',
@@ -1298,7 +1330,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    padding: 18,
+    gap: 12,
+    padding: 14,
+  },
+  groupRowMain: {
+    flex: 1,
+  },
+  groupRowActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
   },
   groupRowTitle: {
     color: '#241711',
@@ -1308,6 +1349,29 @@ const styles = StyleSheet.create({
   groupRowMeta: {
     color: '#7d6758',
     fontSize: 14,
+  },
+  groupFavoriteButton: {
+    alignItems: 'center',
+    backgroundColor: '#f2e8dc',
+    borderColor: '#e0c8b1',
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  groupFavoriteButtonActive: {
+    backgroundColor: '#f7e1c8',
+    borderColor: '#d59b60',
+  },
+  groupFavoriteButtonLabel: {
+    color: '#8a5b3f',
+    fontSize: 17,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  groupFavoriteButtonLabelActive: {
+    color: '#9a5a1e',
   },
   destructiveAction: {
     color: '#b33f2f',
@@ -1353,50 +1417,12 @@ const styles = StyleSheet.create({
     color: '#f5fff8',
   },
   detailOverlay: {
-    backgroundColor: 'rgba(36, 23, 17, 0.18)',
+    backgroundColor: '#f7f1ea',
     bottom: 0,
     left: 0,
     position: 'absolute',
     right: 0,
     top: 0,
-  },
-  detailSheet: {
-    backgroundColor: '#fffaf5',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    marginTop: 120,
-  },
-  detailContent: {
-    gap: 14,
-    padding: 22,
-    paddingBottom: 80,
-  },
-  detailHeader: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  detailTitle: {
-    color: '#241711',
-    fontSize: 28,
-    fontWeight: '700',
-    maxWidth: 280,
-  },
-  detailMeta: {
-    color: '#8a5b3f',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 6,
-  },
-  sourceLink: {
-    color: '#2c6a7c',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  detailListItem: {
-    color: '#3b2d24',
-    fontSize: 16,
-    lineHeight: 24,
   },
   inlineBackButton: {
     alignSelf: 'flex-start',

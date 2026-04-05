@@ -14,6 +14,7 @@ type GroupRow = {
   id: string;
   householdId: string;
   name: string;
+  isFavorite: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -30,6 +31,8 @@ type RecipeRow = {
   ingredients: string[];
   instructions: string[];
   servings?: string;
+  prepTime?: string;
+  cookTime?: string;
   status: RecipeDraft['status'];
   createdAt: string;
   updatedAt: string;
@@ -39,8 +42,9 @@ export type RecipeBookPersistence = {
   getHousehold(): Promise<HouseholdRow | null>;
   createHousehold(name: string): Promise<HouseholdRow>;
   listGroups(householdId: string): Promise<GroupRow[]>;
-  insertGroup(householdId: string, name: string): Promise<void>;
+  insertGroup(householdId: string, name: string, isFavorite?: boolean): Promise<void>;
   renameGroup(groupId: string, name: string): Promise<void>;
+  setGroupFavorite(groupId: string, isFavorite: boolean): Promise<void>;
   deleteGroup(groupId: string): Promise<void>;
   listRecipes(householdId: string): Promise<RecipeRow[]>;
   insertRecipe(householdId: string, draft: RecipeDraft): Promise<RecipeRow>;
@@ -65,6 +69,11 @@ export function createRecipeBookRepository(persistence: RecipeBookPersistence) {
     renameGroup: async (groupId: string, name: string): Promise<RecipeBookState> => {
       const household = await ensureHousehold(persistence);
       await persistence.renameGroup(groupId, name);
+      return loadRecipeBookState(persistence, household.id);
+    },
+    setGroupFavorite: async (groupId: string, isFavorite: boolean): Promise<RecipeBookState> => {
+      const household = await ensureHousehold(persistence);
+      await persistence.setGroupFavorite(groupId, isFavorite);
       return loadRecipeBookState(persistence, household.id);
     },
     deleteGroup: async (groupId: string): Promise<RecipeBookState> => {
@@ -120,7 +129,7 @@ export function createSupabaseRecipeBookPersistence(client: SupabaseClient): Rec
     async listGroups(householdId) {
       const { data, error } = await client
         .from('recipe_groups')
-        .select('id, household_id, name, created_at, updated_at')
+        .select('id, household_id, name, is_favorite, created_at, updated_at')
         .eq('household_id', householdId)
         .order('created_at', { ascending: true });
 
@@ -130,8 +139,12 @@ export function createSupabaseRecipeBookPersistence(client: SupabaseClient): Rec
 
       return (data ?? []).map(mapGroupRow);
     },
-    async insertGroup(householdId, name) {
-      const { error } = await client.from('recipe_groups').insert({ household_id: householdId, name });
+    async insertGroup(householdId, name, isFavorite = false) {
+      const { error } = await client.from('recipe_groups').insert({
+        household_id: householdId,
+        name,
+        is_favorite: isFavorite,
+      });
 
       if (error) {
         throw error;
@@ -141,6 +154,16 @@ export function createSupabaseRecipeBookPersistence(client: SupabaseClient): Rec
       const { error } = await client
         .from('recipe_groups')
         .update({ name, updated_at: new Date().toISOString() })
+        .eq('id', groupId);
+
+      if (error) {
+        throw error;
+      }
+    },
+    async setGroupFavorite(groupId, isFavorite) {
+      const { error } = await client
+        .from('recipe_groups')
+        .update({ is_favorite: isFavorite, updated_at: new Date().toISOString() })
         .eq('id', groupId);
 
       if (error) {
@@ -158,7 +181,7 @@ export function createSupabaseRecipeBookPersistence(client: SupabaseClient): Rec
       const { data, error } = await client
         .from('recipes')
         .select(
-          'id, household_id, title, description, hero_image_url, source_url, source_type, source_photo_uris, ingredients, instructions, servings, status, created_at, updated_at'
+          'id, household_id, title, description, hero_image_url, source_url, source_type, source_photo_uris, ingredients, instructions, servings, prep_time, cook_time, status, created_at, updated_at'
         )
         .eq('household_id', householdId)
         .order('created_at', { ascending: false });
@@ -174,7 +197,7 @@ export function createSupabaseRecipeBookPersistence(client: SupabaseClient): Rec
         .from('recipes')
         .insert(mapRecipeDraftForInsert(householdId, draft))
         .select(
-          'id, household_id, title, description, hero_image_url, source_url, source_type, source_photo_uris, ingredients, instructions, servings, status, created_at, updated_at'
+          'id, household_id, title, description, hero_image_url, source_url, source_type, source_photo_uris, ingredients, instructions, servings, prep_time, cook_time, status, created_at, updated_at'
         )
         .single();
 
@@ -276,6 +299,7 @@ async function loadRecipeBookState(persistence: RecipeBookPersistence, household
     groups: groups.map((group) => ({
       id: group.id,
       name: group.name,
+      isFavorite: group.isFavorite ?? false,
     })),
     recipes: recipes.map(mapStateRecipe),
     memberships,
@@ -294,6 +318,7 @@ function mapGroupRow(row: Record<string, unknown>): GroupRow {
     id: row.id as string,
     householdId: row.household_id as string,
     name: row.name as string,
+    isFavorite: (row.is_favorite as boolean | null) ?? false,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -312,6 +337,8 @@ function mapRecipeRow(row: Record<string, unknown>): RecipeRow {
     ingredients: ((row.ingredients as string[] | null) ?? []) as string[],
     instructions: ((row.instructions as string[] | null) ?? []) as string[],
     servings: (row.servings as string | null) ?? undefined,
+    prepTime: (row.prep_time as string | null) ?? undefined,
+    cookTime: (row.cook_time as string | null) ?? undefined,
     status: row.status as RecipeDraft['status'],
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -330,6 +357,8 @@ function mapStateRecipe(recipe: RecipeRow): RecipeRecord {
     ingredients: recipe.ingredients,
     instructions: recipe.instructions,
     servings: recipe.servings,
+    prepTime: recipe.prepTime,
+    cookTime: recipe.cookTime,
     status: recipe.status,
     createdAt: recipe.createdAt,
     updatedAt: recipe.updatedAt,
@@ -348,6 +377,8 @@ function mapRecipeDraftForInsert(householdId: string, draft: RecipeDraft) {
     ingredients: draft.ingredients,
     instructions: draft.instructions,
     servings: draft.servings ?? null,
+    prep_time: draft.prepTime ?? null,
+    cook_time: draft.cookTime ?? null,
     status: draft.status,
   };
 }
@@ -363,6 +394,8 @@ function mapRecipeDraftForUpdate(draft: RecipeDraft) {
     ingredients: draft.ingredients,
     instructions: draft.instructions,
     servings: draft.servings ?? null,
+    prep_time: draft.prepTime ?? null,
+    cook_time: draft.cookTime ?? null,
     status: draft.status,
     updated_at: new Date().toISOString(),
   };

@@ -70,7 +70,7 @@ export function CloudSyncStatus({ state, title, message }: CloudSyncStatusProps)
       style={[styles.card, { backgroundColor: theme.backgroundColor, borderColor: theme.borderColor }]}
       testID="cloud-sync-status-root"
     >
-      <View style={styles.headerRow}>
+      <View style={[styles.contentRow, styles.contentRowInner]}>
         <View style={[styles.badge, { backgroundColor: theme.badgeBackgroundColor }]} testID="cloud-sync-status-badge">
           {state === 'loading' ? (
             <ActivityIndicator
@@ -84,34 +84,43 @@ export function CloudSyncStatus({ state, title, message }: CloudSyncStatusProps)
           )}
           <Text style={[styles.badgeLabel, { color: theme.badgeTextColor }]}>{theme.badgeLabel}</Text>
         </View>
-      </View>
 
-      <Text style={[styles.title, { color: theme.titleColor }]}>{title}</Text>
-      <Text style={[styles.message, { color: theme.messageColor }]}>{message}</Text>
+        <View style={styles.copyColumn}>
+          <Text style={styles.inlineCopy} numberOfLines={1} ellipsizeMode="tail">
+            <Text style={[styles.titleText, { color: theme.titleColor }]}>{title}</Text>
+            <Text style={[styles.messageText, { color: theme.messageColor }]}> {message}</Text>
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 26,
+    borderRadius: 22,
     borderWidth: 1,
-    gap: 10,
-    padding: 18,
-  },
-  headerRow: {
-    alignItems: 'flex-start',
     flexDirection: 'row',
-    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  contentRow: {
+    flex: 1,
+  },
+  contentRowInner: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
   },
   badge: {
     alignItems: 'center',
     alignSelf: 'flex-start',
     borderRadius: 999,
     flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
   },
   badgeSpinner: {
     marginRight: 2,
@@ -127,13 +136,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    lineHeight: 24,
+  copyColumn: {
+    flex: 1,
   },
-  message: {
+  inlineCopy: {
+    flexShrink: 1,
     fontSize: 14,
-    lineHeight: 20,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  titleText: {
+    fontWeight: '700',
+  },
+  messageText: {
+    fontWeight: '500',
   },
 });

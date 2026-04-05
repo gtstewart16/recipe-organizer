@@ -1,11 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { AppState, type AppStateStatus } from 'react-native';
+import { Alert, AppState, type AppStateStatus } from 'react-native';
 
 const mockCloudState = {
   groups: [
-    { id: 'group-weeknight', name: 'Weeknight' },
-    { id: 'group-weekend', name: 'Weekend' },
-    { id: 'group-healthy', name: 'Healthy' },
+    { id: 'group-weeknight', name: 'Weeknight', isFavorite: false },
+    { id: 'group-weekend', name: 'Weekend', isFavorite: false },
+    { id: 'group-healthy', name: 'Healthy', isFavorite: false },
   ],
   recipes: [
     {
@@ -57,6 +57,12 @@ const mockRepository = {
   loadState: jest.fn(async () => mockCloudState),
   createGroup: jest.fn(async () => mockCloudState),
   renameGroup: jest.fn(async () => mockCloudState),
+  setGroupFavorite: jest.fn(async (_groupId: string, isFavorite: boolean) => ({
+    ...mockCloudState,
+    groups: mockCloudState.groups.map((group) =>
+      group.id === 'group-weeknight' ? { ...group, isFavorite } : group
+    ),
+  })),
   deleteGroup: jest.fn(async () => mockCloudState),
   importRecipe: jest.fn(async () => importedCloudState),
   updateRecipe: jest.fn(async () => mockCloudState),
@@ -122,9 +128,12 @@ jest.mock('./src/services/photo-import', () => ({
     title: 'Pesto Chicken and Roasted Veggie Farro Bowls',
     sourceType: 'photo',
     sourcePhotoUris: ['file:///cookbook-page.jpg'],
+    heroImageUri: 'file:///cookbook-page.jpg',
     ingredients: ['1 pound chicken cutlets, sliced in half', '4 cups broccoli florets'],
     instructions: ['Marinate the chicken.', 'Roast the vegetables and serve with farro.'],
     servings: '4',
+    prepTime: '20 mins',
+    cookTime: '35 mins',
     status: 'needs_review',
   })),
 }));
@@ -150,6 +159,12 @@ describe('Recipe Organizer app', () => {
     mockRepository.loadState.mockResolvedValue(mockCloudState);
     mockRepository.createGroup.mockResolvedValue(mockCloudState);
     mockRepository.renameGroup.mockResolvedValue(mockCloudState);
+    mockRepository.setGroupFavorite.mockResolvedValue({
+      ...mockCloudState,
+      groups: mockCloudState.groups.map((group) =>
+        group.id === 'group-weeknight' ? { ...group, isFavorite: true } : group
+      ),
+    });
     mockRepository.deleteGroup.mockResolvedValue(mockCloudState);
     mockRepository.importRecipe.mockResolvedValue(importedCloudState);
     mockRepository.updateRecipe.mockResolvedValue(mockCloudState);
@@ -227,6 +242,8 @@ describe('Recipe Organizer app', () => {
 
     expect(await screen.findByDisplayValue('Pesto Chicken and Roasted Veggie Farro Bowls')).toBeTruthy();
     expect(screen.getByDisplayValue('4')).toBeTruthy();
+    expect(screen.getByDisplayValue('20 mins')).toBeTruthy();
+    expect(screen.getByDisplayValue('35 mins')).toBeTruthy();
     expect(screen.getByText('Review import')).toBeTruthy();
     expect(screen.getByText('Confirm recipe')).toBeTruthy();
   });
@@ -260,6 +277,35 @@ describe('Recipe Organizer app', () => {
     fireEvent.press(screen.getByText('Continue to library'));
 
     expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+  });
+
+  it('lets the user favorite a group and surfaces it in the favorite groups section', async () => {
+    const favoritedState = {
+      ...mockCloudState,
+      groups: mockCloudState.groups.map((group) =>
+        group.id === 'group-weeknight' ? { ...group, isFavorite: true } : group
+      ),
+    };
+    mockRepository.setGroupFavorite.mockResolvedValue(favoritedState);
+
+    render(<App />);
+
+    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+
+    expect(await screen.findByText('No favorite groups yet')).toBeTruthy();
+
+    await pressPrimaryTab('Groups');
+    fireEvent.press(screen.getByTestId('groups-favorite-button-group-weeknight'));
+
+    await waitFor(() => {
+      expect(mockRepository.setGroupFavorite).toHaveBeenCalledWith('group-weeknight', true);
+    });
+
+    mockRepository.loadState.mockResolvedValue(favoritedState);
+    await pressPrimaryTab('Recipes');
+    expect(await screen.findByText('Weeknight')).toBeTruthy();
   });
 
   it('exposes refreshable scroll containers on Recipes, Groups, and Add landing view', async () => {
@@ -391,6 +437,8 @@ describe('Recipe Organizer app', () => {
   });
 
   it('deletes a recipe from the recipe detail view', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+
     render(<App />);
 
     fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
@@ -401,10 +449,26 @@ describe('Recipe Organizer app', () => {
     fireEvent.press(screen.getByText('Jalapeño Popper Turkey Burgers'));
     expect(await screen.findByText('Open original recipe')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Delete recipe'));
+    fireEvent.press(screen.getByTestId('recipe-detail-delete-button'));
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Delete recipe?',
+      expect.stringContaining('Jalapeño Popper Turkey Burgers'),
+      expect.any(Array)
+    );
+
+    const deleteAction = (alertSpy.mock.calls[0]?.[2] as { text: string; onPress?: () => void }[]).find(
+      (action) => action.text === 'Delete'
+    );
+
+    await act(async () => {
+      deleteAction?.onPress?.();
+    });
 
     await waitFor(() => {
       expect(screen.queryAllByText('Jalapeño Popper Turkey Burgers')).toHaveLength(0);
     });
+
+    alertSpy.mockRestore();
   });
 });

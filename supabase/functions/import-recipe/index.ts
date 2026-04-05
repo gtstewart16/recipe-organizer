@@ -17,6 +17,8 @@ type ImportRecipeResponse = {
   ingredients: string[];
   instructions: string[];
   servings?: string;
+  prepTime?: string;
+  cookTime?: string;
   status: 'needs_review';
 };
 
@@ -28,6 +30,8 @@ type OpenAIRecipe = {
   ingredients: string[];
   instructions: string[];
   servings?: string;
+  prepTime?: string;
+  cookTime?: string;
 };
 
 const corsHeaders = {
@@ -60,6 +64,12 @@ const RECIPE_SCHEMA = {
       servings: {
         type: ['string', 'null'],
       },
+      prepTime: {
+        type: ['string', 'null'],
+      },
+      cookTime: {
+        type: ['string', 'null'],
+      },
       ingredients: {
         type: 'array',
         items: {
@@ -73,7 +83,7 @@ const RECIPE_SCHEMA = {
         },
       },
     },
-    required: ['isRecipe', 'error', 'title', 'description', 'servings', 'ingredients', 'instructions'],
+    required: ['isRecipe', 'error', 'title', 'description', 'servings', 'prepTime', 'cookTime', 'ingredients', 'instructions'],
   },
 };
 
@@ -153,6 +163,7 @@ async function normalizeRecipeWithOpenAI(request: ImportRecipeRequest): Promise<
           '- Put only ingredient lines in ingredients.',
           '- Put only preparation or cooking steps in instructions.',
           '- Preserve servings when it appears on the page.',
+          '- Preserve prep time and cook time when they appear on the page.',
           '- If the page includes grouped ingredients, keep each ingredient as its own line.',
           '- Ignore nutrition, storage notes, page numbers, and unrelated cookbook metadata.',
           '- If description is not useful, return null for description.',
@@ -169,6 +180,7 @@ async function normalizeRecipeWithOpenAI(request: ImportRecipeRequest): Promise<
           '- Put only cooking/preparation steps in instructions.',
           '- If ingredients are grouped (such as sauce or topping), keep each ingredient as its own line.',
           '- If servings appear, preserve them in the servings field.',
+          '- If prep or cook time appear, preserve them in prepTime and cookTime.',
           '- If description is not useful, return null for description.',
           '',
           `Source URL: ${request.sourceUrl ?? ''}`,
@@ -250,6 +262,8 @@ function buildResponse(request: ImportRecipeRequest, normalized: OpenAIRecipe): 
     ingredients: normalized.ingredients,
     instructions: normalized.instructions,
     servings: normalized.servings ?? undefined,
+    prepTime: normalized.prepTime ?? undefined,
+    cookTime: normalized.cookTime ?? undefined,
     status: 'needs_review',
   };
 }

@@ -23,6 +23,8 @@ describe('importRecipeFromPhoto', () => {
         'Serve the farro with pesto, roasted vegetables, and sliced chicken.',
       ],
       servings: '4',
+      prepTime: '20 mins',
+      cookTime: '35 mins',
     }));
 
     const draft = await importRecipeFromPhoto(
@@ -46,6 +48,9 @@ describe('importRecipeFromPhoto', () => {
     );
     expect(draft.title).toBe('Pesto Chicken and Roasted Veggie Farro Bowls');
     expect(draft.servings).toBe('4');
+    expect(draft.prepTime).toBe('20 mins');
+    expect(draft.cookTime).toBe('35 mins');
+    expect(draft.heroImageUri).toBe('file:///cookbook-page.jpg');
     expect(draft.ingredients).toHaveLength(9);
     expect(draft.instructions).toHaveLength(5);
     expect(draft.sourceType).toBe('photo');
@@ -59,6 +64,7 @@ describe('importRecipeFromPhoto', () => {
     ]);
 
     expect(draft.title).toBe('Cookbook Recipe Draft');
+    expect(draft.heroImageUri).toBe('file:///cookbook-page.jpg');
     expect(draft.ingredients.length).toBeGreaterThan(0);
     expect(draft.instructions.length).toBeGreaterThan(0);
   });
