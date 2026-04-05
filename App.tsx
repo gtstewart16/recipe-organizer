@@ -6,7 +6,7 @@ import { useEffect, useMemo, useReducer, useState } from 'react';
 import {
   Alert,
   Linking,
-  Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CloudSyncStatus } from './src/components/CloudSyncStatus';
 import { ImportFeedbackCard } from './src/components/ImportFeedbackCard';
+import { InteractivePressable } from './src/components/InteractivePressable';
 import {
   getImportFallbackGuidance,
   getImportFeedbackTitle,
@@ -75,8 +76,17 @@ export default function App() {
   const [reviewDraft, setReviewDraft] = useState<EditableReviewDraft | null>(null);
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [lastImportSourceType, setLastImportSourceType] = useState<ImportFeedbackSourceType | null>(null);
   const [lastPhotoMode, setLastPhotoMode] = useState<'camera' | 'library'>('library');
+
+  const markCloudSyncSuccess = () => {
+    setLastSyncedAt(new Date().toISOString());
+    setRefreshError(null);
+    setSyncError(null);
+  };
 
   useEffect(() => {
     if (isTestEnv || cloudRepository) {
@@ -124,33 +134,62 @@ export default function App() {
     }
 
     let mounted = true;
-    setHydrated(false);
+    if (!isTestEnv) {
+      setHydrated(false);
+    }
     setSyncError(null);
 
-    cloudRepository
-      .loadState()
-      .then((nextState) => {
+    const load = async () => {
+      try {
+        const nextState = await cloudRepository.loadState();
         if (mounted) {
           dispatch({ type: 'state/hydrated', payload: nextState });
+          markCloudSyncSuccess();
         }
-      })
-      .catch((error) => {
+      } catch (error) {
         if (mounted) {
-          setSyncError(
-            error instanceof Error ? error.message : 'We could not load your shared cloud library right now.'
-          );
+          const message =
+            error instanceof Error ? error.message : 'We could not load your shared cloud library right now.';
+          setSyncError(message);
+          setRefreshError(message);
         }
-      })
-      .finally(() => {
-        if (mounted) {
+      } finally {
+        if (mounted && !isTestEnv) {
           setHydrated(true);
         }
-      });
+      }
+    };
+
+    void load();
 
     return () => {
       mounted = false;
     };
-  }, [cloudRepository, signedIn]);
+  }, [cloudRepository, isTestEnv, signedIn]);
+
+  const reloadCloudState = async ({ showRefreshing = false }: { showRefreshing?: boolean } = {}) => {
+    if (!cloudRepository) {
+      return;
+    }
+
+    if (showRefreshing) {
+      setIsRefreshing(true);
+    }
+
+    try {
+      const nextState = await cloudRepository.loadState();
+      dispatch({ type: 'state/hydrated', payload: nextState });
+      markCloudSyncSuccess();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'We could not refresh your shared library.';
+      setRefreshError(message);
+      setSyncError(message);
+    } finally {
+      if (showRefreshing) {
+        setIsRefreshing(false);
+      }
+    }
+  };
 
   const visibleRecipes = useMemo(() => selectFilteredRecipes(state, searchQuery), [searchQuery, state]);
   const selectedRecipe = state.recipes.find((recipe) => recipe.id === selectedRecipeId) ?? null;
@@ -185,6 +224,7 @@ export default function App() {
       if (cloudRepository) {
         const nextState = await cloudRepository.createGroup(trimmed);
         dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
       } else {
         dispatch({
           type: 'group/created',
@@ -193,7 +233,9 @@ export default function App() {
       }
 
       setNewGroupName('');
-      setSyncError(null);
+      if (!cloudRepository) {
+        setSyncError(null);
+      }
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : 'We could not create that group.');
     }
@@ -213,6 +255,7 @@ export default function App() {
       if (cloudRepository) {
         const nextState = await cloudRepository.renameGroup(selectedGroup.id, trimmed);
         dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
       } else {
         dispatch({
           type: 'group/renamed',
@@ -221,7 +264,9 @@ export default function App() {
       }
 
       setRenameGroupName('');
-      setSyncError(null);
+      if (!cloudRepository) {
+        setSyncError(null);
+      }
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : 'We could not rename that group.');
     }
@@ -328,6 +373,7 @@ export default function App() {
           : await cloudRepository.importRecipe(normalizedDraft, reviewDraft.selectedGroupIds);
 
         dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
       } else if (editingRecipeId) {
         dispatch({
           type: 'recipe/updated',
@@ -387,6 +433,7 @@ export default function App() {
       if (cloudRepository) {
         const nextState = await cloudRepository.deleteRecipe(recipeId);
         dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
       } else {
         dispatch({
           type: 'recipe/deleted',
@@ -395,7 +442,9 @@ export default function App() {
       }
 
       setSelectedRecipeId(null);
-      setSyncError(null);
+      if (!cloudRepository) {
+        setSyncError(null);
+      }
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : 'We could not delete that recipe.');
     }
@@ -406,6 +455,7 @@ export default function App() {
       if (cloudRepository) {
         const nextState = await cloudRepository.deleteGroup(groupId);
         dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
       } else {
         dispatch({ type: 'group/deleted', payload: { id: groupId } });
       }
@@ -413,7 +463,9 @@ export default function App() {
       if (selectedGroupId === groupId) {
         setSelectedGroupId(null);
       }
-      setSyncError(null);
+      if (!cloudRepository) {
+        setSyncError(null);
+      }
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : 'We could not delete that group.');
     }
@@ -459,9 +511,9 @@ export default function App() {
                 onChangeText={setHouseholdPassword}
               />
               {signInError ? <Text style={styles.errorText}>{signInError}</Text> : null}
-              <Pressable style={styles.primaryButton} onPress={handleSignIn}>
+              <InteractivePressable style={styles.primaryButton} onPress={handleSignIn}>
                 <Text style={styles.primaryButtonLabel}>Continue to library</Text>
-              </Pressable>
+              </InteractivePressable>
               <Text style={styles.supportText}>
                 {cloudRepository
                   ? 'Cloud sync is enabled for the shared household library.'
@@ -507,13 +559,21 @@ export default function App() {
         </View>
 
         {activeTab === 'recipes' ? (
-          <ScrollView contentContainerStyle={styles.screenContent}>
+          <ScrollView
+            testID="recipes-scroll-view"
+            contentContainerStyle={styles.screenContent}
+            refreshControl={
+              cloudRepository ? (
+                <RefreshControl refreshing={isRefreshing} onRefresh={() => void reloadCloudState({ showRefreshing: true })} />
+              ) : undefined
+            }
+          >
             <Text style={styles.sectionTitle}>Recipes</Text>
-            {cloudRepository && !syncError ? (
+            {cloudRepository ? (
               <CloudSyncStatus
-                state="success"
-                title="Shared library in sync"
-                message="Your recipes and groups are saving to Supabase and will be available when you reopen the app."
+                state={refreshError ? 'error' : isRefreshing ? 'loading' : 'success'}
+                title={refreshError ? 'Refresh paused' : isRefreshing ? 'Refreshing your shared library' : 'Shared library in sync'}
+                message={refreshError ?? formatLastSynced(lastSyncedAt)}
               />
             ) : null}
             <TextInput
@@ -527,7 +587,7 @@ export default function App() {
             <Text style={styles.sectionLabel}>Groups</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupChipRow}>
               {state.groups.map((group) => (
-                <Pressable
+                <InteractivePressable
                   key={group.id}
                   style={styles.groupChip}
                   onPress={() => {
@@ -536,25 +596,37 @@ export default function App() {
                   }}
                 >
                   <Text style={styles.groupChipLabel}>{group.name}</Text>
-                </Pressable>
+                </InteractivePressable>
               ))}
             </ScrollView>
 
             <Text style={styles.sectionLabel}>Recent recipes</Text>
             {visibleRecipes.map((recipe) => (
-              <Pressable key={recipe.id} style={styles.recipeCard} onPress={() => setSelectedRecipeId(recipe.id)}>
+              <InteractivePressable
+                key={recipe.id}
+                style={styles.recipeCard}
+                onPress={() => setSelectedRecipeId(recipe.id)}
+              >
                 <Text style={styles.recipeCardTitle}>{recipe.title}</Text>
                 <Text style={styles.recipeCardMeta}>{recipe.servings ? `${recipe.servings} servings` : 'Review-ready recipe'}</Text>
                 <Text style={styles.recipeCardSnippet} numberOfLines={2}>
                   {recipe.instructions[0]}
                 </Text>
-              </Pressable>
+              </InteractivePressable>
             ))}
           </ScrollView>
         ) : null}
 
         {activeTab === 'groups' ? (
-          <ScrollView contentContainerStyle={styles.screenContent}>
+          <ScrollView
+            testID="groups-scroll-view"
+            contentContainerStyle={styles.screenContent}
+            refreshControl={
+              cloudRepository ? (
+                <RefreshControl refreshing={isRefreshing} onRefresh={() => void reloadCloudState({ showRefreshing: true })} />
+              ) : undefined
+            }
+          >
             <Text style={styles.sectionTitle}>Groups</Text>
             <View style={styles.inlineComposer}>
               <TextInput
@@ -564,25 +636,25 @@ export default function App() {
                 value={newGroupName}
                 onChangeText={setNewGroupName}
               />
-              <Pressable style={styles.secondaryButton} onPress={handleCreateGroup}>
+              <InteractivePressable style={styles.secondaryButton} onPress={handleCreateGroup}>
                 <Text style={styles.secondaryButtonLabel}>Add</Text>
-              </Pressable>
+              </InteractivePressable>
             </View>
             {syncError ? <Text style={styles.errorText}>{syncError}</Text> : null}
 
             {state.groups.map((group) => (
-              <Pressable key={group.id} style={styles.groupRow} onPress={() => setSelectedGroupId(group.id)}>
+              <InteractivePressable key={group.id} style={styles.groupRow} onPress={() => setSelectedGroupId(group.id)}>
                 <View>
                   <Text style={styles.groupRowTitle}>{group.name}</Text>
                   <Text style={styles.groupRowMeta}>{groupedRecipeCount(group.id)} recipes</Text>
                 </View>
-                <Pressable
+                <InteractivePressable
                   onPress={() => handleDeleteGroup(group.id)}
                   hitSlop={8}
                 >
                   <Text style={styles.destructiveAction}>Delete</Text>
-                </Pressable>
-              </Pressable>
+                </InteractivePressable>
+              </InteractivePressable>
             ))}
 
             {selectedGroup ? (
@@ -596,15 +668,19 @@ export default function App() {
                     value={renameGroupName}
                     onChangeText={setRenameGroupName}
                   />
-                  <Pressable style={styles.secondaryButton} onPress={handleRenameGroup}>
+                  <InteractivePressable style={styles.secondaryButton} onPress={handleRenameGroup}>
                     <Text style={styles.secondaryButtonLabel}>Rename</Text>
-                  </Pressable>
+                  </InteractivePressable>
                 </View>
                 {recipesForGroup(state, selectedGroup.id).map((recipe) => (
-                  <Pressable key={recipe.id} style={styles.groupRecipeCard} onPress={() => setSelectedRecipeId(recipe.id)}>
+                  <InteractivePressable
+                    key={recipe.id}
+                    style={styles.groupRecipeCard}
+                    onPress={() => setSelectedRecipeId(recipe.id)}
+                  >
                     <Text style={styles.groupRecipeTitle}>{recipe.title}</Text>
                     <Text style={styles.groupRecipeMeta}>{recipe.instructions[0]}</Text>
-                  </Pressable>
+                  </InteractivePressable>
                 ))}
               </View>
             ) : null}
@@ -616,6 +692,11 @@ export default function App() {
             testID="add-scroll-view"
             contentContainerStyle={styles.screenContent}
             keyboardShouldPersistTaps="handled"
+            refreshControl={
+              cloudRepository && !reviewDraft ? (
+                <RefreshControl refreshing={isRefreshing} onRefresh={() => void reloadCloudState({ showRefreshing: true })} />
+              ) : undefined
+            }
           >
             <Text style={styles.sectionTitle}>Add</Text>
             {!reviewDraft ? (
@@ -640,26 +721,26 @@ export default function App() {
                       secondaryAction={{ label: 'Dismiss', onPress: () => setImportError(null) }}
                     />
                   ) : null}
-                  <Pressable style={styles.primaryButton} onPress={beginUrlReview}>
+                  <InteractivePressable style={styles.primaryButton} onPress={beginUrlReview}>
                     <Text style={styles.primaryButtonLabel}>
                       {isImportingUrl ? 'Importing recipe…' : 'Create review draft'}
                     </Text>
-                  </Pressable>
+                  </InteractivePressable>
                 </View>
                 <View style={styles.panel}>
                   <Text style={styles.panelTitle}>From photo</Text>
                   <Text style={styles.panelBody}>Capture cookbook pages or import them from your library.</Text>
                 <View style={styles.actionRow}>
-                    <Pressable style={styles.secondaryButton} onPress={() => beginPhotoReview('camera')}>
+                    <InteractivePressable style={styles.secondaryButton} onPress={() => beginPhotoReview('camera')}>
                       <Text style={styles.secondaryButtonLabel}>
                         {isImportingPhoto ? 'Importing photo…' : 'Use camera'}
                       </Text>
-                    </Pressable>
-                    <Pressable style={styles.secondaryButton} onPress={() => beginPhotoReview('library')}>
+                    </InteractivePressable>
+                    <InteractivePressable style={styles.secondaryButton} onPress={() => beginPhotoReview('library')}>
                       <Text style={styles.secondaryButtonLabel}>
                         {isImportingPhoto ? 'Importing photo…' : 'Photo library'}
                       </Text>
-                    </Pressable>
+                    </InteractivePressable>
                   </View>
                   {importError && lastImportSourceType === 'photo' ? (
                     <ImportFeedbackCard
@@ -674,7 +755,7 @@ export default function App() {
               </>
             ) : (
               <View style={styles.panel}>
-                <Pressable
+                <InteractivePressable
                   style={styles.inlineBackButton}
                   onPress={() => {
                     setReviewDraft(null);
@@ -682,7 +763,7 @@ export default function App() {
                   }}
                 >
                   <Text style={styles.inlineBackButtonLabel}>Back to import</Text>
-                </Pressable>
+                </InteractivePressable>
                 <Text style={styles.panelTitle}>Review import</Text>
                 <Text style={styles.panelBody}>
                   Edit anything the parser missed, choose a group, then confirm the recipe to save it into your shared library.
@@ -723,7 +804,7 @@ export default function App() {
                     const selected = reviewDraft.selectedGroupIds.includes(group.id);
 
                     return (
-                      <Pressable
+                      <InteractivePressable
                         key={group.id}
                         style={[styles.groupSelectChip, selected ? styles.groupSelectChipActive : null]}
                         onPress={() =>
@@ -738,14 +819,14 @@ export default function App() {
                         <Text style={[styles.groupSelectChipLabel, selected ? styles.groupSelectChipLabelActive : null]}>
                           {group.name}
                         </Text>
-                      </Pressable>
+                      </InteractivePressable>
                     );
                   })}
                 </View>
                 {importError ? <Text style={styles.errorText}>{importError}</Text> : null}
 
                 <View style={styles.actionRow}>
-                  <Pressable
+                  <InteractivePressable
                     style={styles.secondaryButton}
                     onPress={() => {
                       setReviewDraft(null);
@@ -753,10 +834,10 @@ export default function App() {
                     }}
                   >
                     <Text style={styles.secondaryButtonLabel}>Discard draft</Text>
-                  </Pressable>
-                  <Pressable style={styles.primaryButtonCompact} onPress={handleSaveRecipe}>
+                  </InteractivePressable>
+                  <InteractivePressable style={styles.primaryButtonCompact} onPress={handleSaveRecipe}>
                     <Text style={styles.primaryButtonLabel}>Confirm recipe</Text>
-                  </Pressable>
+                  </InteractivePressable>
                 </View>
               </View>
             )}
@@ -774,21 +855,21 @@ export default function App() {
                     {selectedRecipe.servings ? `${selectedRecipe.servings} servings` : 'Review-ready'}
                   </Text>
                 </View>
-                <Pressable onPress={() => setSelectedRecipeId(null)}>
+                <InteractivePressable onPress={() => setSelectedRecipeId(null)}>
                   <Text style={styles.secondaryButtonLabel}>Close</Text>
-                </Pressable>
+                </InteractivePressable>
               </View>
-              <Pressable style={styles.secondaryButton} onPress={() => beginRecipeEdit(selectedRecipe)}>
+              <InteractivePressable style={styles.secondaryButton} onPress={() => beginRecipeEdit(selectedRecipe)}>
                 <Text style={styles.secondaryButtonLabel}>Edit recipe</Text>
-              </Pressable>
-              <Pressable style={styles.destructiveButton} onPress={() => handleDeleteRecipe(selectedRecipe.id)}>
+              </InteractivePressable>
+              <InteractivePressable style={styles.destructiveButton} onPress={() => handleDeleteRecipe(selectedRecipe.id)}>
                 <Text style={styles.destructiveButtonLabel}>Delete recipe</Text>
-              </Pressable>
+              </InteractivePressable>
 
               {selectedRecipe.sourceUrl ? (
-                <Pressable onPress={() => Linking.openURL(selectedRecipe.sourceUrl!)}>
+                <InteractivePressable onPress={() => Linking.openURL(selectedRecipe.sourceUrl!)}>
                   <Text style={styles.sourceLink}>Open original recipe</Text>
-                </Pressable>
+                </InteractivePressable>
               ) : null}
 
               <Text style={styles.sectionLabel}>Ingredients</Text>
@@ -858,9 +939,9 @@ function TabButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable style={[styles.tabButton, active ? styles.tabButtonActive : null]} onPress={onPress}>
+    <InteractivePressable style={[styles.tabButton, active ? styles.tabButtonActive : null]} onPress={onPress}>
       <Text style={[styles.tabButtonText, active ? styles.tabButtonTextActive : null]}>{label}</Text>
-    </Pressable>
+    </InteractivePressable>
   );
 }
 
@@ -909,6 +990,14 @@ function parseMultilineList(value: string): string[] {
     .split('\n')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function formatLastSynced(value: string | null) {
+  if (!value) {
+    return 'Last synced just now.';
+  }
+
+  return `Last synced at ${new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`;
 }
 
 const styles = StyleSheet.create({

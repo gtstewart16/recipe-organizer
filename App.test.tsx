@@ -1,4 +1,70 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+
+const mockCloudState = {
+  groups: [
+    { id: 'group-weeknight', name: 'Weeknight' },
+    { id: 'group-weekend', name: 'Weekend' },
+    { id: 'group-healthy', name: 'Healthy' },
+  ],
+  recipes: [
+    {
+      id: 'recipe-1',
+      title: 'Jalapeño Popper Turkey Burgers',
+      description: undefined,
+      heroImageUri: undefined,
+      sourceUrl: 'https://example.com/jalapeno-popper-turkey-burgers',
+      sourceType: 'url' as const,
+      sourcePhotoUris: [],
+      ingredients: ['1 protein or main ingredient'],
+      instructions: ['Review the imported recipe and update the title, ingredients, and servings as needed.'],
+      servings: '6',
+      status: 'ready' as const,
+      createdAt: '2026-04-04T12:00:00.000Z',
+      updatedAt: '2026-04-04T12:00:00.000Z',
+    },
+  ],
+  memberships: [
+    { recipeId: 'recipe-1', groupId: 'group-weeknight' },
+    { recipeId: 'recipe-1', groupId: 'group-healthy' },
+  ],
+};
+
+const importedCloudState = {
+  ...mockCloudState,
+  recipes: [
+    ...mockCloudState.recipes,
+    {
+      id: 'recipe-2',
+      title: 'Cacio E Pepe',
+      description: undefined,
+      heroImageUri: undefined,
+      sourceUrl: 'https://example.com/cacio-e-pepe',
+      sourceType: 'url' as const,
+      sourcePhotoUris: [],
+      ingredients: ['12 ounces spaghetti', '2 cups pecorino romano'],
+      instructions: ['Cook the pasta.', 'Toss with cheese and pepper.'],
+      servings: undefined,
+      status: 'ready' as const,
+      createdAt: '2026-04-04T12:05:00.000Z',
+      updatedAt: '2026-04-04T12:05:00.000Z',
+    },
+  ],
+  memberships: [...mockCloudState.memberships, { recipeId: 'recipe-2', groupId: 'group-weeknight' }],
+};
+
+const mockRepository = {
+  loadState: jest.fn(async () => mockCloudState),
+  createGroup: jest.fn(async () => mockCloudState),
+  renameGroup: jest.fn(async () => mockCloudState),
+  deleteGroup: jest.fn(async () => mockCloudState),
+  importRecipe: jest.fn(async () => importedCloudState),
+  updateRecipe: jest.fn(async () => mockCloudState),
+  deleteRecipe: jest.fn(async () => ({
+    ...mockCloudState,
+    recipes: [],
+    memberships: [],
+  })),
+};
 
 jest.mock('expo-image-picker', () => ({
   launchCameraAsync: jest.fn(async () => ({
@@ -21,6 +87,15 @@ jest.mock('expo-image-picker', () => ({
       },
     ],
   })),
+}));
+
+jest.mock('./src/lib/supabase', () => ({
+  supabase: {},
+}));
+
+jest.mock('./src/lib/recipe-book-repository', () => ({
+  createSupabaseRecipeBookPersistence: jest.fn(() => ({})),
+  createRecipeBookRepository: jest.fn(() => mockRepository),
 }));
 
 jest.mock('./src/services/url-import', () => ({
@@ -69,6 +144,7 @@ describe('Recipe Organizer app', () => {
     fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
     fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
     fireEvent.press(screen.getByText('Continue to library'));
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
 
     expect(screen.getAllByText('Recipes').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Groups').length).toBeGreaterThan(0);
@@ -92,8 +168,9 @@ describe('Recipe Organizer app', () => {
     fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
     fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
     fireEvent.press(screen.getByText('Continue to library'));
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Add'));
+    fireEvent.press(screen.getAllByText('Add')[0]);
     fireEvent.changeText(
       screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
       'https://example.com/cacio-e-pepe'
@@ -114,8 +191,9 @@ describe('Recipe Organizer app', () => {
     fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
     fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
     fireEvent.press(screen.getByText('Continue to library'));
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Add'));
+    fireEvent.press(screen.getAllByText('Add')[0]);
     fireEvent.press(screen.getByText('Photo library'));
 
     expect(await screen.findByDisplayValue('Pesto Chicken and Roasted Veggie Farro Bowls')).toBeTruthy();
@@ -130,8 +208,9 @@ describe('Recipe Organizer app', () => {
     fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
     fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
     fireEvent.press(screen.getByText('Continue to library'));
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Add'));
+    fireEvent.press(screen.getAllByText('Add')[0]);
     fireEvent.changeText(
       screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
       'https://example.com/not-a-recipe'
@@ -144,13 +223,59 @@ describe('Recipe Organizer app', () => {
     expect(screen.queryByText('Review import')).toBeNull();
   });
 
+  it('shows shared-library sync status on the Recipes tab when cloud sync is enabled', async () => {
+    render(<App />);
+
+    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+  });
+
+  it('exposes refreshable scroll containers on Recipes, Groups, and Add landing view', async () => {
+    render(<App />);
+
+    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+
+    expect(await screen.findByTestId('recipes-scroll-view')).toBeTruthy();
+
+    fireEvent.press(screen.getAllByText('Groups')[0]);
+    expect(screen.getByTestId('groups-scroll-view')).toBeTruthy();
+
+    fireEvent.press(screen.getAllByText('Add')[0]);
+    expect(screen.getByTestId('add-scroll-view')).toBeTruthy();
+  });
+
+  it('keeps the Add review draft free of the landing refresh status copy', async () => {
+    render(<App />);
+
+    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+
+    fireEvent.press(screen.getAllByText('Add')[0]);
+    fireEvent.changeText(
+      screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
+      'https://example.com/cacio-e-pepe'
+    );
+    fireEvent.press(screen.getByText('Create review draft'));
+
+    expect(await screen.findByText('Review import')).toBeTruthy();
+    expect(screen.queryByText(/Last synced|Refreshing your shared library/i)).toBeNull();
+  });
+
   it('keeps the add review flow inside a scroll view so lower controls remain reachable', async () => {
     render(<App />);
 
     fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
     fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
     fireEvent.press(screen.getByText('Continue to library'));
-    fireEvent.press(screen.getByText('Add'));
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    fireEvent.press(screen.getAllByText('Add')[0]);
     fireEvent.changeText(
       screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
       'https://example.com/cacio-e-pepe'
@@ -166,7 +291,8 @@ describe('Recipe Organizer app', () => {
     fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
     fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
     fireEvent.press(screen.getByText('Continue to library'));
-    fireEvent.press(screen.getByText('Add'));
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    fireEvent.press(screen.getAllByText('Add')[0]);
     fireEvent.changeText(
       screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
       'https://example.com/cacio-e-pepe'
@@ -179,7 +305,7 @@ describe('Recipe Organizer app', () => {
     fireEvent.press(screen.getByText('Confirm recipe'));
 
     expect(await screen.findByPlaceholderText('Rename group')).toBeTruthy();
-    expect(screen.getByText('Cacio E Pepe')).toBeTruthy();
+    expect(await screen.findByText('Cacio E Pepe')).toBeTruthy();
   });
 
   it('deletes a recipe from the recipe detail view', async () => {
@@ -188,12 +314,15 @@ describe('Recipe Organizer app', () => {
     fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
     fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
     fireEvent.press(screen.getByText('Continue to library'));
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
 
     fireEvent.press(screen.getByText('Jalapeño Popper Turkey Burgers'));
     expect(await screen.findByText('Open original recipe')).toBeTruthy();
 
     fireEvent.press(screen.getByText('Delete recipe'));
 
-    expect(screen.queryByText('Jalapeño Popper Turkey Burgers')).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryAllByText('Jalapeño Popper Turkey Burgers')).toHaveLength(0);
+    });
   });
 });
