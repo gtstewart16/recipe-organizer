@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
-import { RecipeBookState, RecipeDraft, RecipeRecord } from '../store/recipe-book';
+import { ImportJob, RecipeBookState, RecipeDraft, RecipeRecord } from '../store/recipe-book';
 
 const DEFAULT_HOUSEHOLD_NAME = 'The Kitchen';
 const DEFAULT_GROUP_NAMES = ['Weeknight', 'Weekend', 'Healthy'];
@@ -38,6 +38,21 @@ type RecipeRow = {
   updatedAt: string;
 };
 
+type ImportJobRow = {
+  id: string;
+  householdId: string;
+  sourceType: ImportJob['sourceType'];
+  sourceUrl?: string;
+  sourcePhotoUris: string[];
+  title: string;
+  status: ImportJob['status'];
+  errorMessage?: string;
+  draft?: RecipeDraft;
+  recipeId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type RecipeBookPersistence = {
   getHousehold(): Promise<HouseholdRow | null>;
   createHousehold(name: string): Promise<HouseholdRow>;
@@ -52,6 +67,8 @@ export type RecipeBookPersistence = {
   deleteRecipe(recipeId: string): Promise<void>;
   listMemberships(groupIds: string[]): Promise<RecipeBookState['memberships']>;
   replaceMemberships(recipeId: string, groupIds: string[]): Promise<void>;
+  listImportJobs(householdId: string): Promise<ImportJobRow[]>;
+  upsertImportJob(householdId: string, job: ImportJob): Promise<ImportJobRow>;
 };
 
 export function createRecipeBookRepository(persistence: RecipeBookPersistence) {
@@ -96,6 +113,11 @@ export function createRecipeBookRepository(persistence: RecipeBookPersistence) {
     deleteRecipe: async (recipeId: string): Promise<RecipeBookState> => {
       const household = await ensureHousehold(persistence);
       await persistence.deleteRecipe(recipeId);
+      return loadRecipeBookState(persistence, household.id);
+    },
+    upsertImportJob: async (job: ImportJob): Promise<RecipeBookState> => {
+      const household = await ensureHousehold(persistence);
+      await persistence.upsertImportJob(household.id, job);
       return loadRecipeBookState(persistence, household.id);
     },
   };
@@ -265,6 +287,36 @@ export function createSupabaseRecipeBookPersistence(client: SupabaseClient): Rec
         throw insertError;
       }
     },
+    async listImportJobs(householdId) {
+      const { data, error } = await client
+        .from('import_jobs')
+        .select(
+          'id, household_id, source_type, source_url, source_photo_uris, title, status, error_message, draft, recipe_id, created_at, updated_at'
+        )
+        .eq('household_id', householdId)
+        .order('updated_at', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      return (data ?? []).map(mapImportJobRow);
+    },
+    async upsertImportJob(householdId, job) {
+      const { data, error } = await client
+        .from('import_jobs')
+        .upsert(mapImportJobForUpsert(householdId, job), { onConflict: 'id' })
+        .select(
+          'id, household_id, source_type, source_url, source_photo_uris, title, status, error_message, draft, recipe_id, created_at, updated_at'
+        )
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return mapImportJobRow(data);
+    },
   };
 }
 
@@ -294,6 +346,9 @@ async function loadRecipeBookState(persistence: RecipeBookPersistence, household
   const groups = await persistence.listGroups(householdId);
   const recipes = await persistence.listRecipes(householdId);
   const memberships = await persistence.listMemberships(groups.map((group) => group.id));
+  const importJobs = (await persistence.listImportJobs(householdId)).sort((left, right) =>
+    right.updatedAt.localeCompare(left.updatedAt)
+  );
 
   return {
     groups: groups.map((group) => ({
@@ -303,6 +358,7 @@ async function loadRecipeBookState(persistence: RecipeBookPersistence, household
     })),
     recipes: recipes.map(mapStateRecipe),
     memberships,
+    importJobs: importJobs.map(mapStateImportJob),
   };
 }
 
@@ -345,6 +401,23 @@ function mapRecipeRow(row: Record<string, unknown>): RecipeRow {
   };
 }
 
+function mapImportJobRow(row: Record<string, unknown>): ImportJobRow {
+  return {
+    id: row.id as string,
+    householdId: row.household_id as string,
+    sourceType: row.source_type as ImportJob['sourceType'],
+    sourceUrl: (row.source_url as string | null) ?? undefined,
+    sourcePhotoUris: ((row.source_photo_uris as string[] | null) ?? []) as string[],
+    title: row.title as string,
+    status: row.status as ImportJob['status'],
+    errorMessage: (row.error_message as string | null) ?? undefined,
+    draft: (row.draft as RecipeDraft | null) ?? undefined,
+    recipeId: (row.recipe_id as string | null) ?? undefined,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}
+
 function mapStateRecipe(recipe: RecipeRow): RecipeRecord {
   return {
     id: recipe.id,
@@ -362,6 +435,22 @@ function mapStateRecipe(recipe: RecipeRow): RecipeRecord {
     status: recipe.status,
     createdAt: recipe.createdAt,
     updatedAt: recipe.updatedAt,
+  };
+}
+
+function mapStateImportJob(job: ImportJobRow): ImportJob {
+  return {
+    id: job.id,
+    sourceType: job.sourceType,
+    sourceUrl: job.sourceUrl,
+    sourcePhotoUris: job.sourcePhotoUris,
+    title: job.title,
+    status: job.status,
+    errorMessage: job.errorMessage,
+    draft: job.draft,
+    recipeId: job.recipeId,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
   };
 }
 
@@ -398,5 +487,22 @@ function mapRecipeDraftForUpdate(draft: RecipeDraft) {
     cook_time: draft.cookTime ?? null,
     status: draft.status,
     updated_at: new Date().toISOString(),
+  };
+}
+
+function mapImportJobForUpsert(householdId: string, job: ImportJob) {
+  return {
+    id: job.id,
+    household_id: householdId,
+    source_type: job.sourceType,
+    source_url: job.sourceUrl ?? null,
+    source_photo_uris: job.sourcePhotoUris,
+    title: job.title,
+    status: job.status,
+    error_message: job.errorMessage ?? null,
+    draft: job.draft ?? null,
+    recipe_id: job.recipeId ?? null,
+    created_at: job.createdAt,
+    updated_at: job.updatedAt,
   };
 }

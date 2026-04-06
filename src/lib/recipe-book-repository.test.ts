@@ -1,4 +1,4 @@
-import { createRecipeBookDraftFromUrl, RecipeBookState, RecipeDraft } from '../store/recipe-book';
+import { createRecipeBookDraftFromUrl, ImportJob, RecipeBookState, RecipeDraft } from '../store/recipe-book';
 import { createRecipeBookRepository, RecipeBookPersistence } from './recipe-book-repository';
 
 describe('recipe book repository', () => {
@@ -12,6 +12,32 @@ describe('recipe book repository', () => {
     expect(state.groups.every((group) => group.isFavorite === false)).toBe(true);
     expect(state.recipes).toEqual([]);
     expect(state.memberships).toEqual([]);
+  });
+
+  it('loads persisted import jobs when hydrating the cloud-backed state', async () => {
+    const persistence = createInMemoryPersistence();
+    const repository = createRecipeBookRepository(persistence);
+    const household = await persistence.createHousehold('The Kitchen');
+
+    const job: ImportJob = {
+      id: 'job-1',
+      sourceType: 'url',
+      sourceUrl: 'https://example.com/cacio-e-pepe',
+      sourcePhotoUris: [],
+      title: 'Cacio e Pepe',
+      status: 'in_review',
+      errorMessage: undefined,
+      draft: createRecipeBookDraftFromUrl('https://example.com/cacio-e-pepe'),
+      recipeId: undefined,
+      createdAt: '2026-04-04T12:00:00.000Z',
+      updatedAt: '2026-04-04T12:05:00.000Z',
+    };
+
+    await persistence.upsertImportJob(household.id, job);
+
+    const state = await repository.loadState();
+
+    expect(state.importJobs).toEqual([job]);
   });
 
   it('persists imported recipes and group memberships in the cloud-backed state', async () => {
@@ -90,6 +116,20 @@ function createInMemoryPersistence(): RecipeBookPersistence {
     createdAt: string;
     updatedAt: string;
   }[] = [];
+  const importJobs: {
+    id: string;
+    householdId: string;
+    sourceType: 'url' | 'photo';
+    sourceUrl?: string;
+    sourcePhotoUris: string[];
+    title: string;
+    status: 'failed' | 'in_review' | 'saved';
+    errorMessage?: string;
+    draft?: RecipeDraft;
+    recipeId?: string;
+    createdAt: string;
+    updatedAt: string;
+  }[] = [];
   const recipes: {
     id: string;
     householdId: string;
@@ -125,6 +165,9 @@ function createInMemoryPersistence(): RecipeBookPersistence {
     async listGroups(householdId) {
       return groups.filter((group) => group.householdId === householdId);
     },
+    async listImportJobs(householdId) {
+      return importJobs.filter((job) => job.householdId === householdId);
+    },
     async insertGroup(householdId, name) {
       groups.push({
         id: makeId('group'),
@@ -134,6 +177,20 @@ function createInMemoryPersistence(): RecipeBookPersistence {
         createdAt: now,
         updatedAt: now,
       });
+    },
+    async upsertImportJob(householdId, job) {
+      const nextJob = {
+        ...job,
+        householdId,
+      };
+      const index = importJobs.findIndex((item) => item.id === job.id);
+      if (index >= 0) {
+        importJobs[index] = nextJob;
+        return nextJob;
+      }
+
+      importJobs.unshift(nextJob);
+      return nextJob;
     },
     async renameGroup(groupId, name) {
       const group = groups.find((item) => item.id === groupId);
