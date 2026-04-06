@@ -1,5 +1,6 @@
 export type RecipeSourceType = 'url' | 'photo' | 'manual';
 export type RecipeStatus = 'needs_review' | 'ready' | 'failed';
+export type ImportJobStatus = 'failed' | 'in_review' | 'saved';
 
 export type RecipeDraft = {
   title: string;
@@ -22,6 +23,20 @@ export type RecipeRecord = RecipeDraft & {
   updatedAt: string;
 };
 
+export type ImportJob = {
+  id: string;
+  sourceType: 'url' | 'photo';
+  sourceUrl?: string;
+  sourcePhotoUris: string[];
+  title: string;
+  status: ImportJobStatus;
+  errorMessage?: string;
+  draft?: RecipeDraft;
+  recipeId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type RecipeGroup = {
   id: string;
   name: string;
@@ -37,6 +52,7 @@ export type RecipeBookState = {
   recipes: RecipeRecord[];
   groups: RecipeGroup[];
   memberships: RecipeGroupMembership[];
+  importJobs: ImportJob[];
 };
 
 export type RecipeBookAction =
@@ -45,6 +61,8 @@ export type RecipeBookAction =
   | { type: 'group/renamed'; payload: RecipeGroup }
   | { type: 'group/favoriteToggled'; payload: { id: string; isFavorite: boolean } }
   | { type: 'group/deleted'; payload: { id: string } }
+  | { type: 'importJob/upserted'; payload: ImportJob }
+  | { type: 'importJob/removed'; payload: { id: string } }
   | {
       type: 'recipe/imported';
       payload: {
@@ -84,6 +102,7 @@ export function createEmptyRecipeBookState(): RecipeBookState {
     recipes: [],
     groups: [],
     memberships: [],
+    importJobs: [],
   };
 }
 
@@ -166,6 +185,21 @@ export function recipeBookReducer(
           (membership) => membership.groupId !== action.payload.id
         ),
       };
+    case 'importJob/upserted': {
+      const remaining = state.importJobs.filter((job) => job.id !== action.payload.id);
+
+      return {
+        ...state,
+        importJobs: [action.payload, ...remaining].sort((left, right) =>
+          right.updatedAt.localeCompare(left.updatedAt)
+        ),
+      };
+    }
+    case 'importJob/removed':
+      return {
+        ...state,
+        importJobs: state.importJobs.filter((job) => job.id !== action.payload.id),
+      };
     case 'recipe/imported': {
       const recipeId = `recipe-${state.recipes.length + 1}`;
       const now = new Date().toISOString();
@@ -235,6 +269,18 @@ export function selectFilteredRecipes(state: RecipeBookState, query: string): Re
       value.toLowerCase().includes(normalizedQuery)
     );
   });
+}
+
+export function selectImportHistory(state: RecipeBookState) {
+  const jobs = [...state.importJobs].sort((left, right) =>
+    right.updatedAt.localeCompare(left.updatedAt)
+  );
+
+  return {
+    failed: jobs.filter((job) => job.status === 'failed'),
+    inReview: jobs.filter((job) => job.status === 'in_review'),
+    saved: jobs.filter((job) => job.status === 'saved').slice(0, 5),
+  };
 }
 
 function deriveTitleFromUrl(sourceUrl: string): string {

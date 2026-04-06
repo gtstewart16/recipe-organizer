@@ -96,6 +96,64 @@ describe('recipe book domain', () => {
     ]);
   });
 
+  it('stores failed import jobs newest-first', () => {
+    const initial = createEmptyRecipeBookState();
+
+    const next = recipeBookReducer(initial, {
+      type: 'importJob/upserted',
+      payload: {
+        id: 'job-1',
+        sourceType: 'url',
+        sourceUrl: 'https://example.com/fail',
+        sourcePhotoUris: [],
+        title: 'Example import',
+        status: 'failed',
+        errorMessage: 'No recipe found in the provided text.',
+        createdAt: '2026-04-05T10:00:00.000Z',
+        updatedAt: '2026-04-05T10:00:00.000Z',
+      },
+    });
+
+    expect(next.importJobs).toHaveLength(1);
+    expect(next.importJobs[0].status).toBe('failed');
+    expect(next.importJobs[0].errorMessage).toBe(
+      'No recipe found in the provided text.'
+    );
+  });
+
+  it('updates an existing import job instead of duplicating it', () => {
+    const initial = {
+      ...createEmptyRecipeBookState(),
+      importJobs: [
+        {
+          id: 'job-1',
+          sourceType: 'url' as const,
+          sourceUrl: 'https://example.com/fail',
+          sourcePhotoUris: [],
+          title: 'Example import',
+          status: 'failed' as const,
+          createdAt: '2026-04-05T10:00:00.000Z',
+          updatedAt: '2026-04-05T10:00:00.000Z',
+        },
+      ],
+    };
+
+    const next = recipeBookReducer(initial, {
+      type: 'importJob/upserted',
+      payload: {
+        ...initial.importJobs[0],
+        status: 'in_review',
+        title: 'Recovered draft',
+        draft: createRecipeBookDraftFromUrl('https://example.com/fail'),
+        updatedAt: '2026-04-05T10:05:00.000Z',
+      },
+    });
+
+    expect(next.importJobs).toHaveLength(1);
+    expect(next.importJobs[0].status).toBe('in_review');
+    expect(next.importJobs[0].title).toBe('Recovered draft');
+  });
+
   it('defaults created groups to unfavorited and toggles favorite state on and off', () => {
     const created = recipeBookReducer(createEmptyRecipeBookState(), {
       type: 'group/created',
