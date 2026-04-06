@@ -201,7 +201,7 @@ export function recipeBookReducer(
         importJobs: state.importJobs.filter((job) => job.id !== action.payload.id),
       };
     case 'recipe/imported': {
-      const recipeId = `recipe-${state.recipes.length + 1}`;
+      const recipeId = createNextRecipeId(state.recipes);
       const now = new Date().toISOString();
       const recipe: RecipeRecord = {
         ...action.payload.draft,
@@ -302,6 +302,21 @@ function deriveTitleFromUrl(sourceUrl: string): string {
   } catch {
     return 'Imported Recipe Draft';
   }
+}
+
+function createNextRecipeId(recipes: RecipeRecord[]): string {
+  const nextNumericId =
+    recipes.reduce((maxId, recipe) => {
+      const match = recipe.id.match(/^recipe-(\d+)$/);
+
+      if (!match) {
+        return maxId;
+      }
+
+      return Math.max(maxId, Number(match[1]));
+    }, 0) + 1;
+
+  return `recipe-${nextNumericId}`;
 }
 
 function normalizeRecipeGroup(group: RecipeGroup): RecipeGroup {

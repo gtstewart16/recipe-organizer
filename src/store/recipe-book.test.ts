@@ -3,6 +3,7 @@ import {
   createRecipeBookDraftFromPhoto,
   createRecipeBookDraftFromUrl,
   recipeBookReducer,
+  selectImportHistory,
   selectFilteredRecipes,
 } from './recipe-book';
 
@@ -43,7 +44,7 @@ describe('recipe book domain', () => {
     const state = recipeBookReducer(
       recipeBookReducer(createEmptyRecipeBookState(), {
         type: 'group/created',
-        payload: { id: 'group-weeknight', name: 'Weeknight' } as any,
+        payload: { id: 'group-weeknight', name: 'Weeknight' },
       }),
       {
         type: 'recipe/imported',
@@ -71,11 +72,11 @@ describe('recipe book domain', () => {
 
     const withGroups = recipeBookReducer(state, {
       type: 'group/created',
-      payload: { id: breakfastGroupId, name: 'Weeknight' } as any,
+      payload: { id: breakfastGroupId, name: 'Weeknight' },
     });
     const withTwoGroups = recipeBookReducer(withGroups, {
       type: 'group/created',
-      payload: { id: healthyGroupId, name: 'Healthy' } as any,
+      payload: { id: healthyGroupId, name: 'Healthy' },
     });
 
     const imported = recipeBookReducer(withTwoGroups, {
@@ -99,7 +100,7 @@ describe('recipe book domain', () => {
   it('stores failed import jobs newest-first', () => {
     const initial = createEmptyRecipeBookState();
 
-    const next = recipeBookReducer(initial, {
+    const withOlderJob = recipeBookReducer(initial, {
       type: 'importJob/upserted',
       payload: {
         id: 'job-1',
@@ -114,11 +115,24 @@ describe('recipe book domain', () => {
       },
     });
 
-    expect(next.importJobs).toHaveLength(1);
+    const next = recipeBookReducer(withOlderJob, {
+      type: 'importJob/upserted',
+      payload: {
+        id: 'job-2',
+        sourceType: 'photo',
+        sourcePhotoUris: ['file:///cookbook-page-1.jpg'],
+        title: 'Photo import',
+        status: 'failed',
+        errorMessage: 'The image does not contain a recipe.',
+        createdAt: '2026-04-05T10:02:00.000Z',
+        updatedAt: '2026-04-05T10:02:00.000Z',
+      },
+    });
+
+    expect(next.importJobs).toHaveLength(2);
+    expect(next.importJobs.map((job) => job.id)).toEqual(['job-2', 'job-1']);
     expect(next.importJobs[0].status).toBe('failed');
-    expect(next.importJobs[0].errorMessage).toBe(
-      'No recipe found in the provided text.'
-    );
+    expect(next.importJobs[0].errorMessage).toBe('The image does not contain a recipe.');
   });
 
   it('updates an existing import job instead of duplicating it', () => {
@@ -154,10 +168,183 @@ describe('recipe book domain', () => {
     expect(next.importJobs[0].title).toBe('Recovered draft');
   });
 
+  it('removes import jobs by id', () => {
+    const state = {
+      ...createEmptyRecipeBookState(),
+      importJobs: [
+        {
+          id: 'job-1',
+          sourceType: 'url' as const,
+          sourceUrl: 'https://example.com/first',
+          sourcePhotoUris: [],
+          title: 'First import',
+          status: 'failed' as const,
+          errorMessage: 'Missing steps',
+          createdAt: '2026-04-05T10:00:00.000Z',
+          updatedAt: '2026-04-05T10:00:00.000Z',
+        },
+        {
+          id: 'job-2',
+          sourceType: 'photo' as const,
+          sourcePhotoUris: ['file:///second.jpg'],
+          title: 'Second import',
+          status: 'saved' as const,
+          recipeId: 'recipe-2',
+          createdAt: '2026-04-05T10:05:00.000Z',
+          updatedAt: '2026-04-05T10:05:00.000Z',
+        },
+      ],
+    };
+
+    const next = recipeBookReducer(state, {
+      type: 'importJob/removed',
+      payload: { id: 'job-1' },
+    });
+
+    expect(next.importJobs).toHaveLength(1);
+    expect(next.importJobs[0].id).toBe('job-2');
+  });
+
+  it('generates a recipe id from existing recipe ids instead of array length', () => {
+    const state = {
+      ...createEmptyRecipeBookState(),
+      recipes: [
+        {
+          ...createRecipeBookDraftFromUrl('https://example.com/first'),
+          id: 'recipe-1',
+          createdAt: '2026-04-05T08:00:00.000Z',
+          updatedAt: '2026-04-05T08:00:00.000Z',
+        },
+        {
+          ...createRecipeBookDraftFromUrl('https://example.com/third'),
+          id: 'recipe-3',
+          createdAt: '2026-04-05T08:30:00.000Z',
+          updatedAt: '2026-04-05T08:30:00.000Z',
+        },
+      ],
+    };
+
+    const next = recipeBookReducer(state, {
+      type: 'recipe/imported',
+      payload: {
+        draft: createRecipeBookDraftFromUrl('https://example.com/fourth'),
+        groupIds: [],
+      },
+    });
+
+    expect(next.recipes[0].id).toBe('recipe-4');
+  });
+
+  it('selects import history by status and caps saved jobs at five', () => {
+    const state = {
+      ...createEmptyRecipeBookState(),
+      importJobs: [
+        {
+          id: 'job-saved-1',
+          sourceType: 'url' as const,
+          sourceUrl: 'https://example.com/saved-1',
+          sourcePhotoUris: [],
+          title: 'Saved 1',
+          status: 'saved' as const,
+          recipeId: 'recipe-1',
+          createdAt: '2026-04-05T09:00:00.000Z',
+          updatedAt: '2026-04-05T09:00:00.000Z',
+        },
+        {
+          id: 'job-failed-1',
+          sourceType: 'url' as const,
+          sourceUrl: 'https://example.com/failed-1',
+          sourcePhotoUris: [],
+          title: 'Failed 1',
+          status: 'failed' as const,
+          errorMessage: 'Missing instructions',
+          createdAt: '2026-04-05T09:05:00.000Z',
+          updatedAt: '2026-04-05T09:05:00.000Z',
+        },
+        {
+          id: 'job-saved-6',
+          sourceType: 'photo' as const,
+          sourcePhotoUris: ['file:///saved-6.jpg'],
+          title: 'Saved 6',
+          status: 'saved' as const,
+          recipeId: 'recipe-6',
+          createdAt: '2026-04-05T09:10:00.000Z',
+          updatedAt: '2026-04-05T09:10:00.000Z',
+        },
+        {
+          id: 'job-in-review-1',
+          sourceType: 'photo' as const,
+          sourcePhotoUris: ['file:///review-1.jpg'],
+          title: 'Review 1',
+          status: 'in_review' as const,
+          draft: createRecipeBookDraftFromPhoto(['file:///review-1.jpg']),
+          createdAt: '2026-04-05T09:15:00.000Z',
+          updatedAt: '2026-04-05T09:15:00.000Z',
+        },
+        {
+          id: 'job-saved-5',
+          sourceType: 'url' as const,
+          sourceUrl: 'https://example.com/saved-5',
+          sourcePhotoUris: [],
+          title: 'Saved 5',
+          status: 'saved' as const,
+          recipeId: 'recipe-5',
+          createdAt: '2026-04-05T09:20:00.000Z',
+          updatedAt: '2026-04-05T09:20:00.000Z',
+        },
+        {
+          id: 'job-saved-4',
+          sourceType: 'url' as const,
+          sourceUrl: 'https://example.com/saved-4',
+          sourcePhotoUris: [],
+          title: 'Saved 4',
+          status: 'saved' as const,
+          recipeId: 'recipe-4',
+          createdAt: '2026-04-05T09:25:00.000Z',
+          updatedAt: '2026-04-05T09:25:00.000Z',
+        },
+        {
+          id: 'job-saved-3',
+          sourceType: 'url' as const,
+          sourceUrl: 'https://example.com/saved-3',
+          sourcePhotoUris: [],
+          title: 'Saved 3',
+          status: 'saved' as const,
+          recipeId: 'recipe-3',
+          createdAt: '2026-04-05T09:30:00.000Z',
+          updatedAt: '2026-04-05T09:30:00.000Z',
+        },
+        {
+          id: 'job-saved-2',
+          sourceType: 'url' as const,
+          sourceUrl: 'https://example.com/saved-2',
+          sourcePhotoUris: [],
+          title: 'Saved 2',
+          status: 'saved' as const,
+          recipeId: 'recipe-2',
+          createdAt: '2026-04-05T09:35:00.000Z',
+          updatedAt: '2026-04-05T09:35:00.000Z',
+        },
+      ],
+    };
+
+    const history = selectImportHistory(state);
+
+    expect(history.failed.map((job) => job.id)).toEqual(['job-failed-1']);
+    expect(history.inReview.map((job) => job.id)).toEqual(['job-in-review-1']);
+    expect(history.saved.map((job) => job.id)).toEqual([
+      'job-saved-2',
+      'job-saved-3',
+      'job-saved-4',
+      'job-saved-5',
+      'job-saved-6',
+    ]);
+  });
+
   it('defaults created groups to unfavorited and toggles favorite state on and off', () => {
     const created = recipeBookReducer(createEmptyRecipeBookState(), {
       type: 'group/created',
-      payload: { id: 'group-weeknight', name: 'Weeknight' } as any,
+      payload: { id: 'group-weeknight', name: 'Weeknight' },
     });
 
     expect(created.groups[0]).toMatchObject({
@@ -169,14 +356,14 @@ describe('recipe book domain', () => {
     const favorited = recipeBookReducer(created, {
       type: 'group/favoriteToggled',
       payload: { id: 'group-weeknight', isFavorite: true },
-    } as any);
+    });
 
     expect(favorited.groups[0].isFavorite).toBe(true);
 
     const unfavorited = recipeBookReducer(favorited, {
       type: 'group/favoriteToggled',
       payload: { id: 'group-weeknight', isFavorite: false },
-    } as any);
+    });
 
     expect(unfavorited.groups[0].isFavorite).toBe(false);
   });
@@ -184,7 +371,7 @@ describe('recipe book domain', () => {
   it('deleting a group removes memberships but keeps recipes', () => {
     const base = recipeBookReducer(createEmptyRecipeBookState(), {
       type: 'group/created',
-      payload: { id: 'group-favorites', name: 'Favorites' } as any,
+      payload: { id: 'group-favorites', name: 'Favorites' },
     });
     const withRecipe = recipeBookReducer(base, {
       type: 'recipe/imported',
@@ -207,7 +394,7 @@ describe('recipe book domain', () => {
   it('renames a group without changing its recipe memberships', () => {
     const base = recipeBookReducer(createEmptyRecipeBookState(), {
       type: 'group/created',
-      payload: { id: 'group-weeknight', name: 'Weeknight' } as any,
+      payload: { id: 'group-weeknight', name: 'Weeknight' },
     });
     const withRecipe = recipeBookReducer(base, {
       type: 'recipe/imported',
@@ -230,11 +417,11 @@ describe('recipe book domain', () => {
     const base = recipeBookReducer(
       recipeBookReducer(createEmptyRecipeBookState(), {
         type: 'group/created',
-        payload: { id: 'group-weeknight', name: 'Weeknight' } as any,
+        payload: { id: 'group-weeknight', name: 'Weeknight' },
       }),
       {
         type: 'group/created',
-        payload: { id: 'group-weekend', name: 'Weekend' } as any,
+        payload: { id: 'group-weekend', name: 'Weekend' },
       }
     );
 
@@ -271,11 +458,11 @@ describe('recipe book domain', () => {
     const base = recipeBookReducer(
       recipeBookReducer(createEmptyRecipeBookState(), {
         type: 'group/created',
-        payload: { id: 'group-weeknight', name: 'Weeknight' } as any,
+        payload: { id: 'group-weeknight', name: 'Weeknight' },
       }),
       {
         type: 'group/created',
-        payload: { id: 'group-weekend', name: 'Weekend' } as any,
+        payload: { id: 'group-weekend', name: 'Weekend' },
       }
     );
 
@@ -300,7 +487,7 @@ describe('recipe book domain', () => {
     const state = recipeBookReducer(
       recipeBookReducer(createEmptyRecipeBookState(), {
         type: 'group/created',
-        payload: { id: 'group-weeknight', name: 'Weeknight' } as any,
+        payload: { id: 'group-weeknight', name: 'Weeknight' },
       }),
       {
         type: 'recipe/imported',
