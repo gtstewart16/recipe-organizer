@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CloudSyncStatus } from './src/components/CloudSyncStatus';
 import { ImportFeedbackCard } from './src/components/ImportFeedbackCard';
+import { ImportHistorySection } from './src/components/import-history';
 import { InteractivePressable } from './src/components/InteractivePressable';
 import { RecipeDetailScreen } from './src/components/recipe-detail/RecipeDetailScreen';
 import { RecipesHome } from './src/components/recipes-home';
@@ -40,6 +41,7 @@ import {
   RecipeGroup,
   RecipeRecord,
   recipeBookReducer,
+  selectImportHistory,
   selectFilteredRecipes,
 } from './src/store/recipe-book';
 
@@ -243,6 +245,10 @@ export default function App() {
   }, [cloudRepository, hydrated, refreshTarget, signedIn]);
 
   const visibleRecipes = useMemo(() => selectFilteredRecipes(state, searchQuery), [searchQuery, state]);
+  const importHistory = useMemo(
+    () => selectImportHistory({ ...state, importJobs: state.importJobs ?? [] }),
+    [state]
+  );
   const favoriteGroups = useMemo(
     () => state.groups.filter((group) => group.isFavorite).sort((left, right) => left.name.localeCompare(right.name)),
     [state.groups]
@@ -618,6 +624,10 @@ export default function App() {
     }
   };
 
+  const handleRetryImportJob = (_jobId: string) => {};
+  const handleResumeImportJob = (_jobId: string) => {};
+  const handleOpenSavedImportRecipe = (_recipeId: string) => {};
+
   if (!signedIn) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -894,6 +904,14 @@ export default function App() {
                     />
                   ) : null}
                 </View>
+                <ImportHistorySection
+                  failed={importHistory.failed}
+                  inReview={importHistory.inReview}
+                  saved={importHistory.saved}
+                  onRetry={handleRetryImportJob}
+                  onResume={handleResumeImportJob}
+                  onOpenRecipe={handleOpenSavedImportRecipe}
+                />
               </>
             ) : (
               <View style={styles.panel}>
