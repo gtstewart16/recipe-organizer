@@ -371,8 +371,14 @@ export default function App() {
     }
   };
 
-  const beginUrlReview = async () => {
-    const trimmedUrl = urlInput.trim();
+  const startUrlReview = async ({
+    sourceUrl,
+    existingJobId,
+  }: {
+    sourceUrl: string;
+    existingJobId?: string;
+  }) => {
+    const trimmedUrl = sourceUrl.trim();
 
     if (!trimmedUrl) {
       Alert.alert('Add a link', 'Paste a recipe URL to create a review draft.');
@@ -385,9 +391,10 @@ export default function App() {
 
     try {
       const draft = await importRecipeFromUrl(trimmedUrl);
-      const jobId = createImportJobId();
+      const jobId = existingJobId ?? createImportJobId();
       const timestamp = new Date().toISOString();
 
+      setUrlInput(trimmedUrl);
       setActiveImportJobId(jobId);
       setReviewDraft({ ...draft, selectedGroupIds: [] });
       await persistImportJob({
@@ -406,6 +413,7 @@ export default function App() {
         error instanceof Error
           ? error.message
           : 'We could not parse that recipe link. Try another page or use manual edits after import.';
+      const jobId = existingJobId ?? createImportJobId();
 
       setImportError(
         message
@@ -414,7 +422,7 @@ export default function App() {
       const fallbackDraft = createRecipeBookDraftFromUrl(trimmedUrl);
       const timestamp = new Date().toISOString();
       await persistImportJob({
-        id: createImportJobId(),
+        id: jobId,
         sourceType: 'url',
         sourceUrl: trimmedUrl,
         sourcePhotoUris: [],
@@ -427,6 +435,10 @@ export default function App() {
     } finally {
       setIsImportingUrl(false);
     }
+  };
+
+  const beginUrlReview = async () => {
+    await startUrlReview({ sourceUrl: urlInput });
   };
 
   const beginPhotoReview = async (mode: 'camera' | 'library') => {
@@ -740,9 +752,66 @@ export default function App() {
     }
   };
 
-  const handleRetryImportJob = (_jobId: string) => {};
-  const handleResumeImportJob = (_jobId: string) => {};
-  const handleOpenSavedImportRecipe = (_recipeId: string) => {};
+  const handleRetryImportJob = (jobId: string) => {
+    const job = state.importJobs.find((candidate) => candidate.id === jobId);
+
+    if (!job) {
+      setImportError('We could not find that import history item anymore.');
+      return;
+    }
+
+    setActiveTab('add');
+    setEditingRecipeId(null);
+    setSelectedRecipeId(null);
+
+    if (job.sourceType === 'url') {
+      if (!job.sourceUrl) {
+        setLastImportSourceType('url');
+        setImportError('That saved link is missing its original URL, so please paste it again to retry.');
+        return;
+      }
+
+      void startUrlReview({ sourceUrl: job.sourceUrl, existingJobId: job.id });
+      return;
+    }
+
+    setLastImportSourceType('photo');
+    setImportError(
+      'This photo import can’t be retried from history here because the original image files are no longer available. Reopen your camera or photo library to try again.'
+    );
+  };
+
+  const handleResumeImportJob = (jobId: string) => {
+    const job = state.importJobs.find((candidate) => candidate.id === jobId);
+
+    if (!job || job.status !== 'in_review' || !job.draft) {
+      setImportError('We could not reopen that draft. Try importing it again.');
+      return;
+    }
+
+    setImportError(null);
+    setActiveTab('add');
+    setSelectedRecipeId(null);
+    setEditingRecipeId(null);
+    setUrlInput(job.sourceUrl ?? '');
+    setActiveImportJobId(job.id);
+    setReviewDraft({
+      ...job.draft,
+      selectedGroupIds: [],
+    });
+  };
+
+  const handleOpenSavedImportRecipe = (recipeId: string) => {
+    const recipeExists = state.recipes.some((recipe) => recipe.id === recipeId);
+
+    if (!recipeExists) {
+      setImportError('That saved recipe is not available in the current library snapshot yet.');
+      return;
+    }
+
+    setImportError(null);
+    setSelectedRecipeId(recipeId);
+  };
 
   if (!signedIn) {
     return (

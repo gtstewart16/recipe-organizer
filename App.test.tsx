@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Alert, AppState, type AppStateStatus } from 'react-native';
 
-const mockCloudState = {
+import type { RecipeBookState } from './src/store/recipe-book';
+
+const mockCloudState: RecipeBookState = {
   groups: [
     { id: 'group-weeknight', name: 'Weeknight', isFavorite: false },
     { id: 'group-weekend', name: 'Weekend', isFavorite: false },
@@ -31,7 +33,7 @@ const mockCloudState = {
   importJobs: [],
 };
 
-const importedCloudState = {
+const importedCloudState: RecipeBookState = {
   ...mockCloudState,
   recipes: [
     ...mockCloudState.recipes,
@@ -156,6 +158,13 @@ async function pressPrimaryTab(label: 'Recipes' | 'Groups' | 'Add') {
   await waitFor(() => {
     expect(mockRepository.loadState.mock.calls.length).toBeGreaterThan(initialLoadCount);
   });
+}
+
+async function signInToLibrary() {
+  fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
+  fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+  fireEvent.press(screen.getByText('Continue to library'));
+  expect(await screen.findByText('Shared library in sync')).toBeTruthy();
 }
 
 describe('Recipe Organizer app', () => {
@@ -406,6 +415,205 @@ describe('Recipe Organizer app', () => {
         }),
       })
     );
+  });
+
+  it('retries a failed URL import from history and moves it into review when parsing later succeeds', async () => {
+    const importRecipeFromUrlMock = jest.requireMock('./src/services/url-import').importRecipeFromUrl as jest.Mock;
+    const failedJobState = {
+      ...mockCloudState,
+      importJobs: [
+        {
+          id: 'job-failed-url-1',
+          sourceType: 'url' as const,
+          sourceUrl: 'https://example.com/not-a-recipe',
+          sourcePhotoUris: [],
+          title: 'Not A Recipe',
+          status: 'failed' as const,
+          errorMessage: 'This link does not appear to contain a recipe.',
+          createdAt: '2026-04-04T12:10:00.000Z',
+          updatedAt: '2026-04-04T12:10:00.000Z',
+        },
+      ],
+    };
+
+    mockRepository.loadState.mockResolvedValue(failedJobState);
+    mockRepository.upsertImportJob.mockImplementation(async (job) => ({
+      ...failedJobState,
+      importJobs: [job],
+    }));
+    importRecipeFromUrlMock.mockResolvedValueOnce({
+      title: 'Recovered Pasta',
+      sourceType: 'url',
+      sourceUrl: 'https://example.com/not-a-recipe',
+      sourcePhotoUris: [],
+      ingredients: ['1 pound pasta'],
+      instructions: ['Boil the pasta.'],
+      status: 'needs_review',
+    });
+
+    render(<App />);
+
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+
+    expect(await screen.findByText('Needs attention')).toBeTruthy();
+    fireEvent.press(screen.getByText('Retry'));
+
+    expect(await screen.findByText('Review import')).toBeTruthy();
+    expect(screen.getByDisplayValue('Recovered Pasta')).toBeTruthy();
+    expect(mockRepository.upsertImportJob).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        id: 'job-failed-url-1',
+        sourceType: 'url',
+        sourceUrl: 'https://example.com/not-a-recipe',
+        title: 'Recovered Pasta',
+        status: 'in_review',
+        draft: expect.objectContaining({
+          title: 'Recovered Pasta',
+        }),
+      })
+    );
+  });
+
+  it('retries a failed URL import from history and keeps the same job id when the retry fails again', async () => {
+    const importRecipeFromUrlMock = jest.requireMock('./src/services/url-import').importRecipeFromUrl as jest.Mock;
+    const failedJobState = {
+      ...mockCloudState,
+      importJobs: [
+        {
+          id: 'job-failed-url-2',
+          sourceType: 'url' as const,
+          sourceUrl: 'https://example.com/still-not-a-recipe',
+          sourcePhotoUris: [],
+          title: 'Still Not A Recipe',
+          status: 'failed' as const,
+          errorMessage: 'This link does not appear to contain a recipe.',
+          createdAt: '2026-04-04T12:11:00.000Z',
+          updatedAt: '2026-04-04T12:11:00.000Z',
+        },
+      ],
+    };
+
+    mockRepository.loadState.mockResolvedValue(failedJobState);
+    mockRepository.upsertImportJob.mockImplementation(async (job) => ({
+      ...failedJobState,
+      importJobs: [job],
+    }));
+    importRecipeFromUrlMock.mockRejectedValueOnce(new Error('Still not a recipe page.'));
+
+    render(<App />);
+
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+
+    expect(await screen.findByText('Needs attention')).toBeTruthy();
+    fireEvent.press(screen.getByText('Retry'));
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Still not a recipe page.').length).toBeGreaterThan(0);
+      expect(mockRepository.upsertImportJob).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          id: 'job-failed-url-2',
+          sourceType: 'url',
+          sourceUrl: 'https://example.com/still-not-a-recipe',
+          status: 'failed',
+          errorMessage: 'Still not a recipe page.',
+        })
+      );
+    });
+  });
+
+  it('resumes an in-review draft from history and reopens the review form with the same job id', async () => {
+    const inReviewState = {
+      ...mockCloudState,
+      importJobs: [
+        {
+          id: 'job-review-1',
+          sourceType: 'url' as const,
+          sourceUrl: 'https://example.com/resumable-soup',
+          sourcePhotoUris: [],
+          title: 'Resumable Soup',
+          status: 'in_review' as const,
+          draft: {
+            title: 'Resumable Soup',
+            description: 'Pick up where you left off.',
+            sourceType: 'url' as const,
+            sourceUrl: 'https://example.com/resumable-soup',
+            sourcePhotoUris: [],
+            ingredients: ['2 cups broth'],
+            instructions: ['Warm and serve.'],
+            servings: '2',
+            status: 'needs_review' as const,
+          },
+          createdAt: '2026-04-04T12:15:00.000Z',
+          updatedAt: '2026-04-04T12:15:00.000Z',
+        },
+      ],
+    };
+
+    mockRepository.loadState.mockResolvedValue(inReviewState);
+    mockRepository.upsertImportJob.mockImplementation(async (job) => ({
+      ...importedCloudState,
+      importJobs: [job],
+    }));
+
+    render(<App />);
+
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+
+    expect(await screen.findByText('In review')).toBeTruthy();
+    fireEvent.press(screen.getByText('Resume review'));
+
+    expect(await screen.findByText('Review import')).toBeTruthy();
+    expect(screen.getByDisplayValue('Resumable Soup')).toBeTruthy();
+    expect(screen.getByDisplayValue('Pick up where you left off.')).toBeTruthy();
+    expect(screen.getByDisplayValue('2')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Weeknight'));
+    fireEvent.press(screen.getByText('Confirm recipe'));
+
+    await waitFor(() => {
+      expect(mockRepository.upsertImportJob).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          id: 'job-review-1',
+          status: 'saved',
+        })
+      );
+    });
+  });
+
+  it('opens a saved import from history into the associated recipe detail', async () => {
+    const savedState = {
+      ...importedCloudState,
+      importJobs: [
+        {
+          id: 'job-saved-1',
+          sourceType: 'url' as const,
+          sourceUrl: 'https://example.com/cacio-e-pepe',
+          sourcePhotoUris: [],
+          title: 'Cacio E Pepe',
+          status: 'saved' as const,
+          recipeId: 'recipe-2',
+          createdAt: '2026-04-04T12:20:00.000Z',
+          updatedAt: '2026-04-04T12:20:00.000Z',
+        },
+      ],
+    };
+
+    mockRepository.loadState.mockResolvedValue(savedState);
+
+    render(<App />);
+
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+
+    expect(await screen.findByText('Recently saved')).toBeTruthy();
+    fireEvent.press(screen.getByText('Open recipe'));
+
+    expect(await screen.findByTestId('recipe-detail-screen')).toBeTruthy();
+    expect(screen.getAllByText('Cacio E Pepe').length).toBeGreaterThan(1);
+    expect(screen.getByText('Open original recipe')).toBeTruthy();
   });
 
   it('shows shared-library sync status on the Recipes tab when cloud sync is enabled', async () => {
