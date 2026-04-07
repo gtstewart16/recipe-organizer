@@ -18,7 +18,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CloudSyncStatus } from './src/components/CloudSyncStatus';
 import { ImportFeedbackCard } from './src/components/ImportFeedbackCard';
-import { ImportHistorySection } from './src/components/import-history';
 import { InteractivePressable } from './src/components/InteractivePressable';
 import { RecipeDetailScreen } from './src/components/recipe-detail/RecipeDetailScreen';
 import { RecipesHome } from './src/components/recipes-home';
@@ -42,7 +41,6 @@ import {
   RecipeGroup,
   RecipeRecord,
   recipeBookReducer,
-  selectImportHistory,
   selectFilteredRecipes,
 } from './src/store/recipe-book';
 
@@ -247,10 +245,6 @@ export default function App() {
   }, [cloudRepository, hydrated, refreshTarget, signedIn]);
 
   const visibleRecipes = useMemo(() => selectFilteredRecipes(state, searchQuery), [searchQuery, state]);
-  const importHistory = useMemo(
-    () => selectImportHistory({ ...state, importJobs: state.importJobs ?? [] }),
-    [state]
-  );
   const favoriteGroups = useMemo(
     () => state.groups.filter((group) => group.isFavorite).sort((left, right) => left.name.localeCompare(right.name)),
     [state.groups]
@@ -752,67 +746,6 @@ export default function App() {
     }
   };
 
-  const handleRetryImportJob = (jobId: string) => {
-    const job = state.importJobs.find((candidate) => candidate.id === jobId);
-
-    if (!job) {
-      setImportError('We could not find that import history item anymore.');
-      return;
-    }
-
-    setActiveTab('add');
-    setEditingRecipeId(null);
-    setSelectedRecipeId(null);
-
-    if (job.sourceType === 'url') {
-      if (!job.sourceUrl) {
-        setLastImportSourceType('url');
-        setImportError('That saved link is missing its original URL, so please paste it again to retry.');
-        return;
-      }
-
-      void startUrlReview({ sourceUrl: job.sourceUrl, existingJobId: job.id });
-      return;
-    }
-
-    setLastImportSourceType('photo');
-    setImportError(
-      'This photo import can’t be retried from history here because the original image files are no longer available. Reopen your camera or photo library to try again.'
-    );
-  };
-
-  const handleResumeImportJob = (jobId: string) => {
-    const job = state.importJobs.find((candidate) => candidate.id === jobId);
-
-    if (!job || job.status !== 'in_review' || !job.draft) {
-      setImportError('We could not reopen that draft. Try importing it again.');
-      return;
-    }
-
-    setImportError(null);
-    setActiveTab('add');
-    setSelectedRecipeId(null);
-    setEditingRecipeId(null);
-    setUrlInput(job.sourceUrl ?? '');
-    setActiveImportJobId(job.id);
-    setReviewDraft({
-      ...job.draft,
-      selectedGroupIds: [],
-    });
-  };
-
-  const handleOpenSavedImportRecipe = (recipeId: string) => {
-    const recipeExists = state.recipes.some((recipe) => recipe.id === recipeId);
-
-    if (!recipeExists) {
-      setImportError('That saved recipe is not available in the current library snapshot yet.');
-      return;
-    }
-
-    setImportError(null);
-    setSelectedRecipeId(recipeId);
-  };
-
   if (!signedIn) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -1067,7 +1000,7 @@ export default function App() {
                 <View style={styles.panel}>
                   <Text style={styles.panelTitle}>From photo</Text>
                   <Text style={styles.panelBody}>Capture cookbook pages or import them from your library.</Text>
-                <View style={styles.actionRow}>
+                  <View style={styles.actionRow}>
                     <InteractivePressable style={styles.secondaryButton} onPress={() => beginPhotoReview('camera')}>
                       <Text style={styles.secondaryButtonLabel}>
                         {isImportingPhoto ? 'Importing photo…' : 'Use camera'}
@@ -1089,14 +1022,6 @@ export default function App() {
                     />
                   ) : null}
                 </View>
-                <ImportHistorySection
-                  failed={importHistory.failed}
-                  inReview={importHistory.inReview}
-                  saved={importHistory.saved}
-                  onRetry={handleRetryImportJob}
-                  onResume={handleResumeImportJob}
-                  onOpenRecipe={handleOpenSavedImportRecipe}
-                />
               </>
             ) : (
               <View style={styles.panel}>
@@ -1317,7 +1242,11 @@ function recipesForGroup(state: RecipeBookState, groupId: string): RecipeRecord[
 }
 
 function createImportJobId() {
-  return `import-job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
 }
 
 function findSavedRecipeId(
