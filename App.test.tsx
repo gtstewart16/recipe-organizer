@@ -148,13 +148,15 @@ jest.mock('./src/services/photo-import', () => ({
 jest.mock('./src/lib/auth-session', () => ({
   loadAuthSession: jest.fn(async () => false),
   persistAuthSession: jest.fn(async () => undefined),
+  clearAuthSession: jest.fn(async () => undefined),
 }));
 
 import App from './App';
-import { loadAuthSession, persistAuthSession } from './src/lib/auth-session';
+import { clearAuthSession, loadAuthSession, persistAuthSession } from './src/lib/auth-session';
 
 const mockLoadAuthSession = jest.mocked(loadAuthSession);
 const mockPersistAuthSession = jest.mocked(persistAuthSession);
+const mockClearAuthSession = jest.mocked(clearAuthSession);
 
 async function renderAppToSignInGate() {
   render(<App />);
@@ -186,6 +188,7 @@ describe('Recipe Organizer app', () => {
     jest.clearAllMocks();
     mockLoadAuthSession.mockResolvedValue(false);
     mockPersistAuthSession.mockResolvedValue(undefined);
+    mockClearAuthSession.mockResolvedValue(undefined);
     mockRepository.loadState.mockResolvedValue(mockCloudState);
     mockRepository.createGroup.mockResolvedValue(mockCloudState);
     mockRepository.renameGroup.mockResolvedValue(mockCloudState);
@@ -231,6 +234,79 @@ describe('Recipe Organizer app', () => {
     await waitFor(() => {
       expect(mockPersistAuthSession).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('opens settings from the top-right utility button', async () => {
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    fireEvent.press(screen.getByLabelText('Open settings'));
+
+    expect(await screen.findByTestId('settings-screen')).toBeTruthy();
+    expect(screen.getByText('Settings')).toBeTruthy();
+  });
+
+  it('signs out from settings and returns to the auth screen', async () => {
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    fireEvent.press(screen.getByLabelText('Open settings'));
+    expect(await screen.findByTestId('settings-screen')).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('Sign out'));
+
+    expect(await screen.findByText('Your household recipe library')).toBeTruthy();
+    expect(screen.queryByTestId('settings-screen')).toBeNull();
+    expect(screen.queryByText('Shared library in sync')).toBeNull();
+
+    await waitFor(() => {
+      expect(mockClearAuthSession).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('shows the auth screen again after sign-out and relaunch', async () => {
+    const app = render(<App />);
+
+    expect(await screen.findByText('Your household recipe library')).toBeTruthy();
+    await signInToLibrary();
+
+    fireEvent.press(screen.getByLabelText('Open settings'));
+    expect(await screen.findByTestId('settings-screen')).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('Sign out'));
+    expect(await screen.findByText('Your household recipe library')).toBeTruthy();
+
+    app.unmount();
+    mockLoadAuthSession.mockResolvedValueOnce(false);
+
+    render(<App />);
+
+    expect(await screen.findByText('Your household recipe library')).toBeTruthy();
+    expect(screen.queryByText('Shared library in sync')).toBeNull();
+    expect(mockLoadAuthSession).toHaveBeenCalled();
+  });
+
+  it('keeps the user signed in when clearing the persisted session fails', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockClearAuthSession.mockRejectedValueOnce(new Error('storage offline'));
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    fireEvent.press(screen.getByLabelText('Open settings'));
+    expect(await screen.findByTestId('settings-screen')).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('Sign out'));
+
+    await waitFor(() => {
+      expect(mockClearAuthSession).toHaveBeenCalledTimes(1);
+      expect(alertSpy).toHaveBeenCalledWith('Could not sign out', 'Please try again in a moment.');
+    });
+
+    expect(screen.getByTestId('settings-screen')).toBeTruthy();
+    expect(screen.queryByText('Your household recipe library')).toBeNull();
+
+    alertSpy.mockRestore();
   });
 
   it('does not persist a session or enter the library with invalid credentials', async () => {

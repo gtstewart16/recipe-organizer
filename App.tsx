@@ -21,8 +21,9 @@ import { ImportFeedbackCard } from './src/components/ImportFeedbackCard';
 import { InteractivePressable } from './src/components/InteractivePressable';
 import { RecipeDetailScreen } from './src/components/recipe-detail/RecipeDetailScreen';
 import { RecipesHome } from './src/components/recipes-home';
+import { SettingsScreen } from './src/components/settings';
 import { SwipeToDeleteRow } from './src/components/swipe-actions';
-import { loadAuthSession, persistAuthSession } from './src/lib/auth-session';
+import { clearAuthSession, loadAuthSession, persistAuthSession } from './src/lib/auth-session';
 import {
   getImportFallbackGuidance,
   getImportFeedbackTitle,
@@ -71,6 +72,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('recipes');
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [householdEmail, setHouseholdEmail] = useState(HOUSEHOLD_EMAIL);
   const [householdPassword, setHouseholdPassword] = useState(HOUSEHOLD_PASSWORD);
@@ -302,6 +304,33 @@ export default function App() {
   const groupedRecipeCount = (groupId: string) =>
     state.memberships.filter((membership) => membership.groupId === groupId).length;
 
+  const resetSignedInShellState = () => {
+    previousRefreshTargetRef.current = null;
+    skipNextAutoRefreshTargetRef.current = null;
+    lastAppStateRef.current = AppState.currentState;
+    setActiveTab('recipes');
+    setSelectedRecipeId(null);
+    setSelectedGroupId(null);
+    setIsSettingsOpen(false);
+    setSearchQuery('');
+    setSignInError(null);
+    setNewGroupName('');
+    setRenameGroupName('');
+    setUrlInput('');
+    setImportError(null);
+    setIsImportingUrl(false);
+    setIsImportingPhoto(false);
+    setReviewDraft(null);
+    setActiveImportJobId(null);
+    setEditingRecipeId(null);
+    setSyncError(null);
+    setRefreshError(null);
+    setIsRefreshing(false);
+    setLastSyncedAt(null);
+    setLastImportSourceType(null);
+    setLastPhotoMode('library');
+  };
+
   const handleSignIn = () => {
     if (householdEmail === HOUSEHOLD_EMAIL && householdPassword === HOUSEHOLD_PASSWORD) {
       setSignedIn(true);
@@ -319,6 +348,16 @@ export default function App() {
 
     setSignedIn(false);
     setSignInError('Use the shared household email and password.');
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await clearAuthSession();
+      resetSignedInShellState();
+      setSignedIn(false);
+    } catch {
+      Alert.alert('Could not sign out', 'Please try again in a moment.');
+    }
   };
 
   const handleCreateGroup = async () => {
@@ -776,12 +815,21 @@ export default function App() {
     }
   };
 
+  if (isSettingsOpen) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="dark" />
+        <SettingsScreen onClose={() => setIsSettingsOpen(false)} onSignOut={() => void handleSignOut()} />
+      </SafeAreaView>
+    );
+  }
+
   if (!authHydrated) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar style="dark" />
         <View style={styles.appShell}>
-          <HeaderBar />
+          <HeaderBar onOpenSettings={() => setIsSettingsOpen(true)} />
           <View style={styles.panel}>
             <CloudSyncStatus
               state="loading"
@@ -843,7 +891,7 @@ export default function App() {
       <SafeAreaView style={styles.safeArea}>
         <StatusBar style="dark" />
         <View style={styles.appShell}>
-          <HeaderBar />
+          <HeaderBar onOpenSettings={() => setIsSettingsOpen(true)} />
           <View style={styles.panel}>
             <CloudSyncStatus
               state={syncError ? 'error' : 'loading'}
@@ -862,7 +910,7 @@ export default function App() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
       <View style={styles.appShell}>
-        <HeaderBar />
+        <HeaderBar onOpenSettings={() => setIsSettingsOpen(true)} />
 
         <View style={styles.tabBar}>
           <TabButton label="Recipes" active={activeTab === 'recipes'} onPress={() => setActiveTab('recipes')} />
@@ -1223,12 +1271,12 @@ function EditableListField({
   );
 }
 
-function HeaderBar() {
+function HeaderBar({ onOpenSettings }: { onOpenSettings: () => void }) {
   return (
     <View style={styles.headerBar}>
-      <View style={styles.headerBadge}>
-        <Text style={styles.headerBadgeText}>MVP</Text>
-      </View>
+      <InteractivePressable accessibilityLabel="Open settings" onPress={onOpenSettings} style={styles.headerUtilityButton}>
+        <Text style={styles.headerUtilityButtonText}>Settings</Text>
+      </InteractivePressable>
     </View>
   );
 }
@@ -1380,17 +1428,17 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     minHeight: 18,
   },
-  headerBadge: {
+  headerUtilityButton: {
     backgroundColor: '#efe1d3',
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  headerBadgeText: {
+  headerUtilityButtonText: {
     color: '#6e4b34',
     fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
   tabBar: {
