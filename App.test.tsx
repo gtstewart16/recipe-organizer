@@ -28,6 +28,7 @@ const mockCloudState = {
     { recipeId: 'recipe-1', groupId: 'group-weeknight' },
     { recipeId: 'recipe-1', groupId: 'group-healthy' },
   ],
+  importJobs: [],
 };
 
 const importedCloudState = {
@@ -65,6 +66,10 @@ const mockRepository = {
   })),
   deleteGroup: jest.fn(async () => mockCloudState),
   importRecipe: jest.fn(async () => importedCloudState),
+  upsertImportJob: jest.fn(async (job) => ({
+    ...(job.status === 'saved' ? importedCloudState : mockCloudState),
+    importJobs: [job],
+  })),
   updateRecipe: jest.fn(async () => mockCloudState),
   deleteRecipe: jest.fn(async () => ({
     ...mockCloudState,
@@ -167,6 +172,10 @@ describe('Recipe Organizer app', () => {
     });
     mockRepository.deleteGroup.mockResolvedValue(mockCloudState);
     mockRepository.importRecipe.mockResolvedValue(importedCloudState);
+    mockRepository.upsertImportJob.mockImplementation(async (job) => ({
+      ...(job.status === 'saved' ? importedCloudState : mockCloudState),
+      importJobs: [job],
+    }));
     mockRepository.updateRecipe.mockResolvedValue(mockCloudState);
     mockRepository.deleteRecipe.mockResolvedValue({
       ...mockCloudState,
@@ -248,6 +257,63 @@ describe('Recipe Organizer app', () => {
     expect(screen.getByText('Confirm recipe')).toBeTruthy();
   });
 
+  it('completes the visible save flow even if marking the import job saved fails afterward', async () => {
+    mockRepository.upsertImportJob.mockImplementation(async (job) => {
+      if (job.status === 'saved') {
+        throw new Error('We could not update that import draft right now.');
+      }
+
+      return {
+        ...mockCloudState,
+        importJobs: [job],
+      };
+    });
+
+    render(<App />);
+
+    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+
+    await pressPrimaryTab('Add');
+    fireEvent.changeText(
+      screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
+      'https://example.com/cacio-e-pepe'
+    );
+    fireEvent.press(screen.getByText('Create review draft'));
+    expect(await screen.findByText('Review import')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Weeknight'));
+    fireEvent.press(screen.getByText('Confirm recipe'));
+
+    expect(await screen.findByPlaceholderText('Rename group')).toBeTruthy();
+    expect(await screen.findByText('Cacio E Pepe')).toBeTruthy();
+    expect(screen.queryByText('Review import')).toBeNull();
+  });
+
+  it('resets photo importing and shows a recoverable error when the picker launch throws', async () => {
+    const imagePicker = jest.requireMock('expo-image-picker') as {
+      launchImageLibraryAsync: jest.Mock;
+    };
+    imagePicker.launchImageLibraryAsync.mockRejectedValueOnce(new Error('Photo library is unavailable right now.'));
+
+    render(<App />);
+
+    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+
+    await pressPrimaryTab('Add');
+    fireEvent.press(screen.getByText('Photo library'));
+
+    expect(await screen.findByText('Cookbook photo import needs attention')).toBeTruthy();
+    expect(screen.getByText('Photo library is unavailable right now.')).toBeTruthy();
+    expect(screen.getAllByText('Photo library').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Importing photo…')).toBeNull();
+  });
+
   it('shows retry-oriented import feedback for a non-recipe link instead of a review draft', async () => {
     render(<App />);
 
@@ -264,9 +330,82 @@ describe('Recipe Organizer app', () => {
     fireEvent.press(screen.getByText('Create review draft'));
 
     expect(await screen.findByText('Recipe link import needs attention')).toBeTruthy();
-    expect(screen.getByText('This link does not appear to contain a recipe.')).toBeTruthy();
+    expect(screen.getAllByText('This link does not appear to contain a recipe.').length).toBeGreaterThan(0);
     expect(screen.getByText('Try another link')).toBeTruthy();
     expect(screen.queryByText('Review import')).toBeNull();
+  });
+
+  it('creates a needs-attention import history item when a URL import fails', async () => {
+    mockRepository.upsertImportJob.mockImplementation(async (job) => ({
+      ...mockCloudState,
+      importJobs: [job],
+    }));
+
+    render(<App />);
+
+    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+
+    await pressPrimaryTab('Add');
+    fireEvent.changeText(
+      screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
+      'https://example.com/not-a-recipe'
+    );
+    fireEvent.press(screen.getByText('Create review draft'));
+
+    expect(await screen.findByText('Needs attention')).toBeTruthy();
+    expect(screen.getByText('Not A Recipe')).toBeTruthy();
+    expect(screen.getAllByText('This link does not appear to contain a recipe.').length).toBeGreaterThan(0);
+    expect(mockRepository.upsertImportJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceType: 'url',
+        sourceUrl: 'https://example.com/not-a-recipe',
+        title: 'Not A Recipe',
+        status: 'failed',
+        errorMessage: 'This link does not appear to contain a recipe.',
+      })
+    );
+  });
+
+  it('leaves an in-review import history item behind when backing out of a parsed draft', async () => {
+    mockRepository.upsertImportJob.mockImplementation(async (job) => ({
+      ...mockCloudState,
+      importJobs: [job],
+    }));
+
+    render(<App />);
+
+    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+
+    await pressPrimaryTab('Add');
+    fireEvent.changeText(
+      screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
+      'https://example.com/cacio-e-pepe'
+    );
+    fireEvent.press(screen.getByText('Create review draft'));
+
+    expect(await screen.findByText('Review import')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Back to import'));
+
+    expect(await screen.findByText('In review')).toBeTruthy();
+    expect(screen.getByText('Resume review')).toBeTruthy();
+    expect(mockRepository.upsertImportJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceType: 'url',
+        sourceUrl: 'https://example.com/cacio-e-pepe',
+        title: 'Cacio E Pepe',
+        status: 'in_review',
+        draft: expect.objectContaining({
+          title: 'Cacio E Pepe',
+        }),
+      })
+    );
   });
 
   it('shows shared-library sync status on the Recipes tab when cloud sync is enabled', async () => {

@@ -36,6 +36,7 @@ import { importRecipeFromUrl } from './src/services/url-import';
 import {
   createEmptyRecipeBookState,
   createRecipeBookDraftFromUrl,
+  ImportJob,
   RecipeBookState,
   RecipeDraft,
   RecipeGroup,
@@ -81,6 +82,7 @@ export default function App() {
   const [isImportingUrl, setIsImportingUrl] = useState(false);
   const [isImportingPhoto, setIsImportingPhoto] = useState(false);
   const [reviewDraft, setReviewDraft] = useState<EditableReviewDraft | null>(null);
+  const [activeImportJobId, setActiveImportJobId] = useState<string | null>(null);
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -354,8 +356,25 @@ export default function App() {
     }
   };
 
+  const persistImportJob = async (job: ImportJob) => {
+    try {
+      if (cloudRepository) {
+        const nextState = await cloudRepository.upsertImportJob(job);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
+      } else {
+        dispatch({ type: 'importJob/upserted', payload: job });
+        setSyncError(null);
+      }
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'We could not update that import draft right now.');
+    }
+  };
+
   const beginUrlReview = async () => {
-    if (!urlInput.trim()) {
+    const trimmedUrl = urlInput.trim();
+
+    if (!trimmedUrl) {
       Alert.alert('Add a link', 'Paste a recipe URL to create a review draft.');
       return;
     }
@@ -365,14 +384,46 @@ export default function App() {
     setIsImportingUrl(true);
 
     try {
-      const draft = await importRecipeFromUrl(urlInput.trim());
+      const draft = await importRecipeFromUrl(trimmedUrl);
+      const jobId = createImportJobId();
+      const timestamp = new Date().toISOString();
+
+      setActiveImportJobId(jobId);
       setReviewDraft({ ...draft, selectedGroupIds: [] });
+      await persistImportJob({
+        id: jobId,
+        sourceType: 'url',
+        sourceUrl: trimmedUrl,
+        sourcePhotoUris: [],
+        title: draft.title.trim() || createRecipeBookDraftFromUrl(trimmedUrl).title,
+        status: 'in_review',
+        draft,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
     } catch (error) {
-      setImportError(
+      const message =
         error instanceof Error
           ? error.message
-          : 'We could not parse that recipe link. Try another page or use manual edits after import.'
+          : 'We could not parse that recipe link. Try another page or use manual edits after import.';
+
+      setImportError(
+        message
       );
+      setActiveImportJobId(null);
+      const fallbackDraft = createRecipeBookDraftFromUrl(trimmedUrl);
+      const timestamp = new Date().toISOString();
+      await persistImportJob({
+        id: createImportJobId(),
+        sourceType: 'url',
+        sourceUrl: trimmedUrl,
+        sourcePhotoUris: [],
+        title: fallbackDraft.title,
+        status: 'failed',
+        errorMessage: message,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
     } finally {
       setIsImportingUrl(false);
     }
@@ -384,20 +435,32 @@ export default function App() {
     setImportError(null);
     setIsImportingPhoto(true);
 
-    const result =
-      mode === 'camera'
-        ? await ImagePicker.launchCameraAsync({
-            allowsEditing: false,
-            base64: true,
-            quality: 0.8,
-          })
-        : await ImagePicker.launchImageLibraryAsync({
-            allowsEditing: false,
-            allowsMultipleSelection: true,
-            base64: true,
-            mediaTypes: ['images'],
-            quality: 0.8,
-          });
+    let result: ImagePicker.ImagePickerResult;
+
+    try {
+      result =
+        mode === 'camera'
+          ? await ImagePicker.launchCameraAsync({
+              allowsEditing: false,
+              base64: true,
+              quality: 0.8,
+            })
+          : await ImagePicker.launchImageLibraryAsync({
+              allowsEditing: false,
+              allowsMultipleSelection: true,
+              base64: true,
+              mediaTypes: ['images'],
+              quality: 0.8,
+            });
+    } catch (error) {
+      setImportError(
+        error instanceof Error
+          ? error.message
+          : 'We could not open your photo picker. Try again in a moment.'
+      );
+      setIsImportingPhoto(false);
+      return;
+    }
 
     if (result.canceled || result.assets.length === 0) {
       setIsImportingPhoto(false);
@@ -412,14 +475,42 @@ export default function App() {
           base64: asset.base64,
         }))
       );
+      const jobId = createImportJobId();
+      const timestamp = new Date().toISOString();
 
+      setActiveImportJobId(jobId);
       setReviewDraft({ ...draft, selectedGroupIds: [] });
+      await persistImportJob({
+        id: jobId,
+        sourceType: 'photo',
+        sourcePhotoUris: draft.sourcePhotoUris,
+        title: draft.title.trim() || 'Cookbook Recipe Draft',
+        status: 'in_review',
+        draft,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
     } catch (error) {
-      setImportError(
+      const message =
         error instanceof Error
           ? error.message
-          : 'We could not parse that cookbook photo. Try another image or review the draft manually.'
+          : 'We could not parse that cookbook photo. Try another image or review the draft manually.';
+
+      setImportError(
+        message
       );
+      setActiveImportJobId(null);
+      const timestamp = new Date().toISOString();
+      await persistImportJob({
+        id: createImportJobId(),
+        sourceType: 'photo',
+        sourcePhotoUris: result.assets.map((asset) => asset.uri),
+        title: 'Cookbook Recipe Draft',
+        status: 'failed',
+        errorMessage: message,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
     } finally {
       setIsImportingPhoto(false);
     }
@@ -450,14 +541,20 @@ export default function App() {
       return;
     }
 
+    let savedRecipeId: string | undefined;
+
     try {
       if (cloudRepository) {
+        const previousRecipeIds = new Set(state.recipes.map((recipe) => recipe.id));
         const nextState = editingRecipeId
           ? await cloudRepository.updateRecipe(editingRecipeId, normalizedDraft, reviewDraft.selectedGroupIds)
           : await cloudRepository.importRecipe(normalizedDraft, reviewDraft.selectedGroupIds);
 
         dispatch({ type: 'state/hydrated', payload: nextState });
         markCloudSyncSuccess();
+        savedRecipeId =
+          editingRecipeId ??
+          findSavedRecipeId(nextState.recipes, previousRecipeIds, normalizedDraft);
       } else if (editingRecipeId) {
         dispatch({
           type: 'recipe/updated',
@@ -467,6 +564,7 @@ export default function App() {
             groupIds: reviewDraft.selectedGroupIds,
           },
         });
+        savedRecipeId = editingRecipeId;
       } else {
         dispatch({
           type: 'recipe/imported',
@@ -481,7 +579,25 @@ export default function App() {
       return;
     }
 
+    if (activeImportJobId && (reviewDraft.sourceType === 'url' || reviewDraft.sourceType === 'photo')) {
+      const timestamp = new Date().toISOString();
+      const existingJob = state.importJobs.find((job) => job.id === activeImportJobId);
+
+      await persistImportJob({
+        id: activeImportJobId,
+        sourceType: reviewDraft.sourceType,
+        sourceUrl: normalizedDraft.sourceUrl,
+        sourcePhotoUris: normalizedDraft.sourcePhotoUris,
+        title: normalizedDraft.title,
+        status: 'saved',
+        recipeId: savedRecipeId,
+        createdAt: existingJob?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      });
+    }
+
     setReviewDraft(null);
+    setActiveImportJobId(null);
     setEditingRecipeId(null);
     setUrlInput('');
     setImportError(null);
@@ -918,7 +1034,9 @@ export default function App() {
                 <InteractivePressable
                   style={styles.inlineBackButton}
                   onPress={() => {
+                    skipNextAutoRefreshTargetRef.current = 'add';
                     setReviewDraft(null);
+                    setActiveImportJobId(null);
                     setEditingRecipeId(null);
                   }}
                 >
@@ -1005,7 +1123,9 @@ export default function App() {
                   <InteractivePressable
                     style={styles.secondaryButton}
                     onPress={() => {
+                      skipNextAutoRefreshTargetRef.current = 'add';
                       setReviewDraft(null);
+                      setActiveImportJobId(null);
                       setEditingRecipeId(null);
                     }}
                   >
@@ -1125,6 +1245,26 @@ function recipesForGroup(state: RecipeBookState, groupId: string): RecipeRecord[
   );
 
   return state.recipes.filter((recipe) => recipeIds.has(recipe.id));
+}
+
+function createImportJobId() {
+  return `import-job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function findSavedRecipeId(
+  recipes: RecipeRecord[],
+  previousRecipeIds: Set<string>,
+  draft: Pick<RecipeDraft, 'title' | 'sourceType' | 'sourceUrl'>
+) {
+  return (
+    recipes.find((recipe) => !previousRecipeIds.has(recipe.id))?.id ??
+    recipes.find(
+      (recipe) =>
+        recipe.title === draft.title &&
+        recipe.sourceType === draft.sourceType &&
+        recipe.sourceUrl === draft.sourceUrl
+    )?.id
+  );
 }
 
 function parseMultilineList(value: string): string[] {

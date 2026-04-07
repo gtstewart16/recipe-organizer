@@ -71,7 +71,19 @@ export type RecipeBookPersistence = {
   upsertImportJob(householdId: string, job: ImportJob): Promise<ImportJobRow>;
 };
 
-export function createRecipeBookRepository(persistence: RecipeBookPersistence) {
+export type RecipeBookRepository = {
+  loadState(): Promise<RecipeBookState>;
+  createGroup(name: string): Promise<RecipeBookState>;
+  renameGroup(groupId: string, name: string): Promise<RecipeBookState>;
+  setGroupFavorite(groupId: string, isFavorite: boolean): Promise<RecipeBookState>;
+  deleteGroup(groupId: string): Promise<RecipeBookState>;
+  importRecipe(draft: RecipeDraft, groupIds: string[]): Promise<RecipeBookState>;
+  updateRecipe(recipeId: string, draft: RecipeDraft, groupIds: string[]): Promise<RecipeBookState>;
+  deleteRecipe(recipeId: string): Promise<RecipeBookState>;
+  upsertImportJob(job: ImportJob): Promise<RecipeBookState>;
+};
+
+export function createRecipeBookRepository(persistence: RecipeBookPersistence): RecipeBookRepository {
   return {
     loadState: async (): Promise<RecipeBookState> => {
       const household = await ensureHousehold(persistence);
@@ -101,13 +113,53 @@ export function createRecipeBookRepository(persistence: RecipeBookPersistence) {
     importRecipe: async (draft: RecipeDraft, groupIds: string[]): Promise<RecipeBookState> => {
       const household = await ensureHousehold(persistence);
       const recipe = await persistence.insertRecipe(household.id, draft);
-      await persistence.replaceMemberships(recipe.id, groupIds);
+      try {
+        await persistence.replaceMemberships(recipe.id, groupIds);
+      } catch (error) {
+        try {
+          await persistence.deleteRecipe(recipe.id);
+        } catch {
+          // Best-effort compensation only.
+        }
+
+        throw error;
+      }
       return loadRecipeBookState(persistence, household.id);
     },
     updateRecipe: async (recipeId: string, draft: RecipeDraft, groupIds: string[]): Promise<RecipeBookState> => {
       const household = await ensureHousehold(persistence);
+      const previousState = await loadRecipeBookState(persistence, household.id);
+      const previousRecipe = previousState.recipes.find((recipe) => recipe.id === recipeId);
+      const previousGroupIds = previousState.memberships
+        .filter((membership) => membership.recipeId === recipeId)
+        .map((membership) => membership.groupId);
+
+      if (!previousRecipe) {
+        throw new Error('Recipe no longer exists.');
+      }
+
       await persistence.updateRecipe(recipeId, draft);
-      await persistence.replaceMemberships(recipeId, groupIds);
+
+      try {
+        await persistence.replaceMemberships(recipeId, groupIds);
+      } catch (error) {
+        if (previousRecipe) {
+          try {
+            await persistence.updateRecipe(recipeId, recipeRecordToDraft(previousRecipe));
+          } catch {
+            // Best-effort compensation only.
+          }
+
+          try {
+            await persistence.replaceMemberships(recipeId, previousGroupIds);
+          } catch {
+            // Best-effort compensation only.
+          }
+        }
+
+        throw error;
+      }
+
       return loadRecipeBookState(persistence, household.id);
     },
     deleteRecipe: async (recipeId: string): Promise<RecipeBookState> => {
@@ -332,12 +384,13 @@ async function ensureHousehold(persistence: RecipeBookPersistence): Promise<Hous
 
 async function ensureDefaultGroups(persistence: RecipeBookPersistence, householdId: string) {
   const groups = await persistence.listGroups(householdId);
-
-  if (groups.length > 0) {
-    return;
-  }
+  const existingNames = new Set(groups.map((group) => group.name));
 
   for (const name of DEFAULT_GROUP_NAMES) {
+    if (existingNames.has(name)) {
+      continue;
+    }
+
     await persistence.insertGroup(householdId, name);
   }
 }
@@ -399,6 +452,12 @@ function mapRecipeRow(row: Record<string, unknown>): RecipeRow {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
+}
+
+function recipeRecordToDraft(recipe: RecipeRecord): RecipeDraft {
+  const { id, createdAt, updatedAt, ...draft } = recipe;
+
+  return draft;
 }
 
 function mapImportJobRow(row: Record<string, unknown>): ImportJobRow {
