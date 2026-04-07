@@ -22,6 +22,7 @@ import { InteractivePressable } from './src/components/InteractivePressable';
 import { RecipeDetailScreen } from './src/components/recipe-detail/RecipeDetailScreen';
 import { RecipesHome } from './src/components/recipes-home';
 import { SwipeToDeleteRow } from './src/components/swipe-actions';
+import { loadAuthSession, persistAuthSession } from './src/lib/auth-session';
 import {
   getImportFallbackGuidance,
   getImportFeedbackTitle,
@@ -64,6 +65,7 @@ export default function App() {
     []
   );
   const [state, dispatch] = useReducer(recipeBookReducer, initialSeedState);
+  const [authHydrated, setAuthHydrated] = useState(false);
   const [hydrated, setHydrated] = useState(isTestEnv || !cloudRepository);
   const [signedIn, setSignedIn] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('recipes');
@@ -97,6 +99,31 @@ export default function App() {
     setRefreshError(null);
     setSyncError(null);
   };
+
+  useEffect(() => {
+    let mounted = true;
+
+    loadAuthSession()
+      .then((hasSession) => {
+        if (mounted) {
+          setSignedIn(hasSession);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setSignedIn(false);
+        }
+      })
+      .finally(() => {
+        if (mounted) {
+          setAuthHydrated(true);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (isTestEnv || cloudRepository) {
@@ -279,6 +306,9 @@ export default function App() {
     if (householdEmail === HOUSEHOLD_EMAIL && householdPassword === HOUSEHOLD_PASSWORD) {
       setSignedIn(true);
       setSignInError(null);
+      void persistAuthSession().catch(() => {
+        // Keep the in-memory session usable even if persistence is unavailable.
+      });
       return;
     }
 
@@ -287,8 +317,8 @@ export default function App() {
       return;
     }
 
-    setSignedIn(true);
-    setSignInError(null);
+    setSignedIn(false);
+    setSignInError('Use the shared household email and password.');
   };
 
   const handleCreateGroup = async () => {
@@ -745,6 +775,24 @@ export default function App() {
       void beginPhotoReview(lastPhotoMode);
     }
   };
+
+  if (!authHydrated) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="dark" />
+        <View style={styles.appShell}>
+          <HeaderBar />
+          <View style={styles.panel}>
+            <CloudSyncStatus
+              state="loading"
+              title="Restoring your household session"
+              message="We’re checking whether this device already has access to the shared kitchen library."
+            />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!signedIn) {
     return (

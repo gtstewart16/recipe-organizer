@@ -145,7 +145,21 @@ jest.mock('./src/services/photo-import', () => ({
   })),
 }));
 
+jest.mock('./src/lib/auth-session', () => ({
+  loadAuthSession: jest.fn(async () => false),
+  persistAuthSession: jest.fn(async () => undefined),
+}));
+
 import App from './App';
+import { loadAuthSession, persistAuthSession } from './src/lib/auth-session';
+
+const mockLoadAuthSession = jest.mocked(loadAuthSession);
+const mockPersistAuthSession = jest.mocked(persistAuthSession);
+
+async function renderAppToSignInGate() {
+  render(<App />);
+  expect(await screen.findByText('Your household recipe library')).toBeTruthy();
+}
 
 async function pressPrimaryTab(label: 'Recipes' | 'Groups' | 'Add') {
   const initialLoadCount = mockRepository.loadState.mock.calls.length;
@@ -161,7 +175,7 @@ async function pressPrimaryTab(label: 'Recipes' | 'Groups' | 'Add') {
 }
 
 async function signInToLibrary() {
-  fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
+  fireEvent.changeText(await screen.findByPlaceholderText('Household email'), 'home@kitchen.test');
   fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
   fireEvent.press(screen.getByText('Continue to library'));
   expect(await screen.findByText('Shared library in sync')).toBeTruthy();
@@ -170,6 +184,8 @@ async function signInToLibrary() {
 describe('Recipe Organizer app', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockLoadAuthSession.mockResolvedValue(false);
+    mockPersistAuthSession.mockResolvedValue(undefined);
     mockRepository.loadState.mockResolvedValue(mockCloudState);
     mockRepository.createGroup.mockResolvedValue(mockCloudState);
     mockRepository.renameGroup.mockResolvedValue(mockCloudState);
@@ -193,20 +209,45 @@ describe('Recipe Organizer app', () => {
     });
   });
 
-  it('shows the household sign-in gate before the library', () => {
-    render(<App />);
+  it('shows the household sign-in gate before the library', async () => {
+    await renderAppToSignInGate();
 
-    expect(screen.getByText('Your household recipe library')).toBeTruthy();
     expect(screen.getByText('Enter the shared kitchen account to browse, import, and organize recipes together.')).toBeTruthy();
   });
 
-  it('enters the library and creates a review draft from a pasted URL', async () => {
+  it('restores a persisted signed-in session and skips the auth gate', async () => {
+    mockLoadAuthSession.mockResolvedValueOnce(true);
+
     render(<App />);
 
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
     expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    expect(screen.queryByText('Your household recipe library')).toBeNull();
+    expect(screen.queryByText('Continue to library')).toBeNull();
+  });
+
+  it('persists the auth session after a successful sign-in', async () => {
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    await waitFor(() => {
+      expect(mockPersistAuthSession).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('does not persist a session or enter the library with invalid credentials', async () => {
+    await renderAppToSignInGate();
+
+    fireEvent.changeText(await screen.findByPlaceholderText('Household email'), 'guest@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'not-the-shared-password');
+    fireEvent.press(screen.getByText('Continue to library'));
+
+    expect(screen.getByText('Use the shared household email and password.')).toBeTruthy();
+    expect(screen.queryByText('Shared library in sync')).toBeNull();
+    expect(mockPersistAuthSession).not.toHaveBeenCalled();
+  });
+
+  it('enters the library and creates a review draft from a pasted URL', async () => {
+    await renderAppToSignInGate();
+    await signInToLibrary();
 
     expect(screen.getAllByText('Recipes').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Groups').length).toBeGreaterThan(0);
@@ -225,12 +266,8 @@ describe('Recipe Organizer app', () => {
   });
 
   it('lets the user leave the review screen and paste a different link', async () => {
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    await renderAppToSignInGate();
+    await signInToLibrary();
 
     await pressPrimaryTab('Add');
     fireEvent.changeText(
@@ -248,12 +285,8 @@ describe('Recipe Organizer app', () => {
   });
 
   it('creates a review draft from a cookbook photo using the same review layout', async () => {
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    await renderAppToSignInGate();
+    await signInToLibrary();
 
     await pressPrimaryTab('Add');
     fireEvent.press(screen.getByText('Photo library'));
@@ -278,12 +311,8 @@ describe('Recipe Organizer app', () => {
       };
     });
 
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    await renderAppToSignInGate();
+    await signInToLibrary();
 
     await pressPrimaryTab('Add');
     fireEvent.changeText(
@@ -307,12 +336,8 @@ describe('Recipe Organizer app', () => {
     };
     imagePicker.launchImageLibraryAsync.mockRejectedValueOnce(new Error('Photo library is unavailable right now.'));
 
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    await renderAppToSignInGate();
+    await signInToLibrary();
 
     await pressPrimaryTab('Add');
     fireEvent.press(screen.getByText('Photo library'));
@@ -324,12 +349,8 @@ describe('Recipe Organizer app', () => {
   });
 
   it('shows retry-oriented import feedback for a non-recipe link instead of a review draft', async () => {
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    await renderAppToSignInGate();
+    await signInToLibrary();
 
     await pressPrimaryTab('Add');
     fireEvent.changeText(
@@ -350,12 +371,8 @@ describe('Recipe Organizer app', () => {
       importJobs: [job],
     }));
 
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    await renderAppToSignInGate();
+    await signInToLibrary();
 
     await pressPrimaryTab('Add');
     fireEvent.changeText(
@@ -378,13 +395,8 @@ describe('Recipe Organizer app', () => {
   });
 
   it('shows shared-library sync status on the Recipes tab when cloud sync is enabled', async () => {
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    await renderAppToSignInGate();
+    await signInToLibrary();
   });
 
   it('lets the user favorite a group and surfaces it in the favorite groups section', async () => {
@@ -396,12 +408,8 @@ describe('Recipe Organizer app', () => {
     };
     mockRepository.setGroupFavorite.mockResolvedValue(favoritedState);
 
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-
+    await renderAppToSignInGate();
+    await signInToLibrary();
     expect(await screen.findByText('No favorite groups yet')).toBeTruthy();
 
     await pressPrimaryTab('Groups');
@@ -417,12 +425,8 @@ describe('Recipe Organizer app', () => {
   });
 
   it('exposes refreshable scroll containers on Recipes, Groups, and Add landing view', async () => {
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-
+    await renderAppToSignInGate();
+    await signInToLibrary();
     expect(await screen.findByTestId('recipes-scroll-view')).toBeTruthy();
 
     await pressPrimaryTab('Groups');
@@ -433,13 +437,8 @@ describe('Recipe Organizer app', () => {
   });
 
   it('refreshes cloud state when returning to top-level tabs', async () => {
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    await renderAppToSignInGate();
+    await signInToLibrary();
     mockRepository.loadState.mockClear();
 
     await pressPrimaryTab('Groups');
@@ -464,13 +463,8 @@ describe('Recipe Organizer app', () => {
         return { remove: jest.fn() };
       });
 
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    await renderAppToSignInGate();
+    await signInToLibrary();
     mockRepository.loadState.mockClear();
 
     expect(appStateListener).toBeDefined();
@@ -486,12 +480,8 @@ describe('Recipe Organizer app', () => {
   });
 
   it('keeps the Add review draft free of the landing refresh status copy', async () => {
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    await renderAppToSignInGate();
+    await signInToLibrary();
 
     await pressPrimaryTab('Add');
     fireEvent.changeText(
@@ -505,12 +495,8 @@ describe('Recipe Organizer app', () => {
   });
 
   it('keeps the add review flow inside a scroll view so lower controls remain reachable', async () => {
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    await renderAppToSignInGate();
+    await signInToLibrary();
     await pressPrimaryTab('Add');
     fireEvent.changeText(
       screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
@@ -522,12 +508,8 @@ describe('Recipe Organizer app', () => {
   });
 
   it('confirms a recipe into the chosen group and shows it there immediately', async () => {
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    await renderAppToSignInGate();
+    await signInToLibrary();
     await pressPrimaryTab('Add');
     fireEvent.changeText(
       screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
@@ -547,12 +529,8 @@ describe('Recipe Organizer app', () => {
   it('deletes a recipe from the recipe detail view', async () => {
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
 
-    render(<App />);
-
-    fireEvent.changeText(screen.getByPlaceholderText('Household email'), 'home@kitchen.test');
-    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
-    fireEvent.press(screen.getByText('Continue to library'));
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    await renderAppToSignInGate();
+    await signInToLibrary();
 
     fireEvent.press(screen.getByText('Jalapeño Popper Turkey Burgers'));
     expect(await screen.findByText('Open original recipe')).toBeTruthy();
