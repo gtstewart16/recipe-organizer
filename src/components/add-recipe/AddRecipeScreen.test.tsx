@@ -67,6 +67,44 @@ describe('AddRecipeScreen', () => {
 
     fireEvent.press(screen.getByText('Create review draft'));
     expect(props.onBeginUrlReview).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(screen.getByText('Use camera'));
+    expect(props.onBeginPhotoReview).toHaveBeenCalledWith('camera');
+
+    fireEvent.press(screen.getByText('Photo library'));
+    expect(props.onBeginPhotoReview).toHaveBeenCalledWith('library');
+  });
+
+  it('renders URL import feedback actions', () => {
+    const props = renderAddRecipeScreen({
+      importError: 'The recipe link could not be read.',
+      lastImportSourceType: 'url',
+    });
+
+    expect(screen.getByText('Recipe link import needs attention')).toBeTruthy();
+    expect(screen.getByText('The recipe link could not be read.')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Try another link'));
+    expect(props.onRetryImport).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(screen.getByText('Dismiss'));
+    expect(props.onDismissImportError).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders photo import feedback actions', () => {
+    const props = renderAddRecipeScreen({
+      importError: 'The cookbook photo could not be read.',
+      lastImportSourceType: 'photo',
+    });
+
+    expect(screen.getByText('Cookbook photo import needs attention')).toBeTruthy();
+    expect(screen.getByText('The cookbook photo could not be read.')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Try another photo'));
+    expect(props.onRetryImport).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(screen.getByText('Dismiss'));
+    expect(props.onDismissImportError).toHaveBeenCalledTimes(1);
   });
 
   it('renders review draft mode and updates group selection', () => {

@@ -26,6 +26,7 @@ import { SettingsScreen } from './src/components/settings';
 import { clearAuthSession, loadAuthSession, persistAuthSession } from './src/lib/auth-session';
 import type { ImportFeedbackSourceType } from './src/lib/import-feedback';
 import { createRecipeBookRepository, createSupabaseRecipeBookPersistence } from './src/lib/recipe-book-repository';
+import { parseMultilineList } from './src/lib/recipe-text';
 import { supabase } from './src/lib/supabase';
 import { importRecipeFromPhoto } from './src/services/photo-import';
 import { importRecipeFromUrl } from './src/services/url-import';
@@ -1116,13 +1117,6 @@ function findSavedRecipeId(
         recipe.sourceUrl === draft.sourceUrl
     )?.id
   );
-}
-
-function parseMultilineList(value: string): string[] {
-  return value
-    .split('\n')
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 function formatLastSynced(value: string | null) {

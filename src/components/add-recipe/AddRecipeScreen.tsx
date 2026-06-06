@@ -7,6 +7,7 @@ import {
   getImportRetryLabel,
   type ImportFeedbackSourceType,
 } from '../../lib/import-feedback';
+import { parseMultilineList } from '../../lib/recipe-text';
 import type { RecipeDraft, RecipeGroup } from '../../store/recipe-book';
 import { colors, radius, shadows, spacing, type } from '../../theme';
 import { ImportFeedbackCard } from '../ImportFeedbackCard';
@@ -233,13 +234,6 @@ function EditableListField({
       />
     </View>
   );
-}
-
-function parseMultilineList(value: string): string[] {
-  return value
-    .split('\n')
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 const styles = StyleSheet.create({
