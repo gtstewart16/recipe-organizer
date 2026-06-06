@@ -236,6 +236,30 @@ describe('Recipe Organizer app', () => {
     });
   });
 
+  it('opens actionable sync issue details after a refresh failure', async () => {
+    jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    mockRepository.loadState.mockRejectedValueOnce(new Error('Network request failed.'));
+
+    await act(async () => {
+      screen.getByTestId('recipes-scroll-view').props.refreshControl.props.onRefresh();
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText('Refresh paused')).toBeTruthy();
+    fireEvent.press(screen.getByText('View sync issue'));
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Refresh paused',
+      'Network request failed.',
+      expect.arrayContaining([
+        expect.objectContaining({ text: 'Try again' }),
+      ])
+    );
+  });
+
   it('opens settings from the top-right utility button', async () => {
     await renderAppToSignInGate();
     await signInToLibrary();

@@ -1,6 +1,7 @@
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radius, spacing } from '../theme';
+import { InteractivePressable } from './InteractivePressable';
 
 export type CloudSyncStatusState = 'loading' | 'error' | 'success' | 'info';
 
@@ -8,6 +9,8 @@ export type CloudSyncStatusProps = {
   state: CloudSyncStatusState;
   title: string;
   message: string;
+  actionLabel?: string;
+  onActionPress?: () => void;
 };
 
 type StatusTheme = {
@@ -64,8 +67,9 @@ const STATUS_THEMES: Record<CloudSyncStatusState, StatusTheme> = {
   },
 };
 
-export function CloudSyncStatus({ state, title, message }: CloudSyncStatusProps) {
+export function CloudSyncStatus({ state, title, message, actionLabel, onActionPress }: CloudSyncStatusProps) {
   const theme = STATUS_THEMES[state];
+  const showAction = Boolean(actionLabel && onActionPress);
 
   return (
     <View
@@ -93,6 +97,17 @@ export function CloudSyncStatus({ state, title, message }: CloudSyncStatusProps)
             <Text style={[styles.messageText, { color: theme.messageColor }]}> {message}</Text>
           </Text>
         </View>
+
+        {showAction ? (
+          <InteractivePressable
+            accessibilityLabel={actionLabel}
+            accessibilityRole="button"
+            style={styles.actionButton}
+            onPress={onActionPress}
+          >
+            <Text style={styles.actionButtonLabel}>{actionLabel}</Text>
+          </InteractivePressable>
+        ) : null}
       </View>
     </View>
   );
@@ -114,6 +129,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
+    flexWrap: 'wrap',
   },
   badge: {
     alignItems: 'center',
@@ -140,6 +156,7 @@ const styles = StyleSheet.create({
   },
   copyColumn: {
     flex: 1,
+    minWidth: 180,
   },
   inlineCopy: {
     flexShrink: 1,
@@ -152,5 +169,20 @@ const styles = StyleSheet.create({
   },
   messageText: {
     fontWeight: '500',
+  },
+  actionButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+  },
+  actionButtonLabel: {
+    color: colors.accentPressed,
+    fontSize: 12,
+    fontWeight: '800',
   },
 });

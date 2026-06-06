@@ -225,6 +225,16 @@ export default function App() {
     }
   };
 
+  const showSyncIssue = () => {
+    const message = refreshError ?? syncError ?? 'We could not refresh your shared library.';
+    const title = refreshError ? 'Refresh paused' : 'Sync paused';
+
+    Alert.alert(title, message, [
+      { text: 'Not now', style: 'cancel' },
+      { text: 'Try again', onPress: () => void reloadCloudState({ showRefreshing: true }) },
+    ]);
+  };
+
   useEffect(() => {
     const previousRefreshTarget = previousRefreshTargetRef.current;
     previousRefreshTargetRef.current = refreshTarget;
@@ -892,6 +902,8 @@ export default function App() {
               message={
                 syncError ?? 'We’re syncing your recipes, groups, and saved imports from Supabase.'
               }
+              actionLabel={syncError ? 'View sync issue' : undefined}
+              onActionPress={syncError ? showSyncIssue : undefined}
             />
           </View>
         </View>
@@ -928,6 +940,8 @@ export default function App() {
                   refreshError ? 'Refresh paused' : isRefreshing ? 'Refreshing your shared library' : 'Shared library in sync'
                 }
                 message={refreshError ?? formatLastSynced(lastSyncedAt)}
+                actionLabel={refreshError ? 'View sync issue' : undefined}
+                onActionPress={refreshError ? showSyncIssue : undefined}
               />
             ) : null}
             <RecipesHome
