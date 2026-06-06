@@ -20,15 +20,11 @@ export type InteractivePressableProps = Omit<PressableProps, 'children'> & {
   style?: PressableProps['style'];
 };
 
-const defaultPressedStyle: ViewStyle = {
-  opacity: 0.78,
-};
-
 export function InteractivePressable({
   children,
   textStyle,
-  pressedOpacity = 0.92,
-  pressedScale: _pressedScale = 0.985,
+  pressedOpacity = 0.78,
+  pressedScale = 1,
   accessibilityRole = 'button',
   onPressIn,
   onPressOut,
@@ -51,6 +47,10 @@ export function InteractivePressable({
     pressed,
     textStyle: [styles.text, textStyle, pressed && { opacity: pressedOpacity }],
   };
+  const pressedContainerStyle: ViewStyle = {
+    opacity: pressedOpacity,
+    ...(pressedScale === 1 ? null : { transform: [{ scale: pressedScale }] }),
+  };
 
   return (
     <Pressable
@@ -59,7 +59,7 @@ export function InteractivePressable({
       onPressOut={handlePressOut}
       style={({ pressed: nativePressed }) => [
         typeof style === 'function' ? style({ pressed: nativePressed }) : style,
-        (pressed || nativePressed) && defaultPressedStyle,
+        (pressed || nativePressed) && pressedContainerStyle,
       ]}
       {...rest}
     >

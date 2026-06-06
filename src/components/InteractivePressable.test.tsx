@@ -20,10 +20,33 @@ describe('InteractivePressable', () => {
     expect(screen.getByText('Tap me')).toBeTruthy();
 
     fireEvent(screen.getByTestId('interactive-pressable'), 'pressIn');
+    expect(screen.getByTestId('interactive-pressable')).toHaveStyle({
+      opacity: 0.78,
+    });
+
     fireEvent(screen.getByTestId('interactive-pressable'), 'pressOut');
 
     fireEvent.press(screen.getByTestId('interactive-pressable'));
     expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps custom pressed opacity and scale meaningful for callers', () => {
+    render(
+      <InteractivePressable
+        testID="custom-feedback"
+        pressedOpacity={0.6}
+        pressedScale={0.97}
+      >
+        <Text>Custom feedback</Text>
+      </InteractivePressable>
+    );
+
+    fireEvent(screen.getByTestId('custom-feedback'), 'pressIn');
+
+    expect(screen.getByTestId('custom-feedback')).toHaveStyle({
+      opacity: 0.6,
+      transform: [{ scale: 0.97 }],
+    });
   });
 
   it('supports render-prop children with pressed state and textStyle', () => {
@@ -53,7 +76,7 @@ describe('InteractivePressable', () => {
     expect(screen.getByTestId('rendered-label')).toHaveStyle({
       color: '#24546f',
       fontWeight: '700',
-      opacity: 0.92,
+      opacity: 0.78,
     });
 
     fireEvent(screen.getByTestId('interactive-render-prop'), 'pressOut');
