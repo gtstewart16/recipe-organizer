@@ -180,7 +180,7 @@ async function signInToLibrary() {
   fireEvent.changeText(await screen.findByPlaceholderText('Household email'), 'home@kitchen.test');
   fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
   fireEvent.press(screen.getByText('Continue to library'));
-  expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+  expect(await screen.findByTestId('recipes-scroll-view')).toBeTruthy();
 }
 
 describe('Recipe Organizer app', () => {
@@ -223,9 +223,18 @@ describe('Recipe Organizer app', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('Shared library in sync')).toBeTruthy();
+    expect(await screen.findByTestId('recipes-scroll-view')).toBeTruthy();
     expect(screen.queryByText('Your household recipe library')).toBeNull();
     expect(screen.queryByText('Continue to library')).toBeNull();
+  });
+
+  it('keeps successful cloud sync quiet on the Recipes screen', async () => {
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    expect(screen.queryByText('Shared library in sync')).toBeNull();
+    expect(screen.queryByText('Up to date')).toBeNull();
+    expect(screen.queryByText('View sync issue')).toBeNull();
   });
 
   it('persists the auth session after a successful sign-in', async () => {

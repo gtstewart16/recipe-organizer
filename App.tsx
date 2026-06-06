@@ -933,12 +933,10 @@ export default function App() {
               ) : undefined
             }
           >
-            {cloudRepository ? (
+            {cloudRepository && (refreshError || isRefreshing) ? (
               <CloudSyncStatus
-                state={refreshError ? 'error' : isRefreshing ? 'loading' : 'success'}
-                title={
-                  refreshError ? 'Refresh paused' : isRefreshing ? 'Refreshing your shared library' : 'Shared library in sync'
-                }
+                state={refreshError ? 'error' : 'loading'}
+                title={refreshError ? 'Refresh paused' : 'Refreshing your shared library'}
                 message={refreshError ?? formatLastSynced(lastSyncedAt)}
                 actionLabel={refreshError ? 'View sync issue' : undefined}
                 onActionPress={refreshError ? showSyncIssue : undefined}
