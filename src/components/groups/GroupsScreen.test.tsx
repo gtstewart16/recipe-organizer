@@ -1,3 +1,4 @@
+import { RefreshControl } from 'react-native';
 import { fireEvent, render, screen, within } from '@testing-library/react-native';
 
 import type { RecipeGroup, RecipeRecord } from '../../store/recipe-book';
@@ -37,7 +38,6 @@ function renderGroupsScreen(overrides: Partial<React.ComponentProps<typeof Group
     newGroupName: 'Breakfast',
     renameGroupName: '',
     syncError: null,
-    isRefreshing: false,
     groupedRecipeCount: (groupId) => (groupId === 'group-weeknight' ? 1 : 0),
     onNewGroupNameChange: jest.fn(),
     onRenameGroupNameChange: jest.fn(),
@@ -71,5 +71,36 @@ describe('GroupsScreen', () => {
     expect(props.onToggleGroupFavorite).toHaveBeenCalledWith(groups[0]);
 
     expect(screen.getByText('Cacio E Pepe')).toBeTruthy();
+  });
+
+  it('wires rename, delete, recipe, error, and refresh affordances', () => {
+    const props = renderGroupsScreen({
+      syncError: 'Could not refresh groups.',
+      refreshControl: <RefreshControl refreshing={false} onRefresh={jest.fn()} />,
+    });
+
+    expect(screen.getByText('Could not refresh groups.')).toBeTruthy();
+    expect(screen.getByTestId('groups-scroll-view').props.refreshControl).toBeTruthy();
+
+    fireEvent.changeText(screen.getByPlaceholderText('Rename group'), 'Dinner');
+    expect(props.onRenameGroupNameChange).toHaveBeenCalledWith('Dinner');
+
+    fireEvent.press(screen.getByText('Rename'));
+    expect(props.onRenameGroup).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(screen.getByText('Cacio E Pepe'));
+    expect(props.onRecipePress).toHaveBeenCalledWith('recipe-1');
+    expect(screen.getByTestId('group-delete-group-weeknight')).toBeTruthy();
+    expect(screen.getByTestId('group-recipe-delete-recipe-1')).toBeTruthy();
+  });
+
+  it('shows a choose-group state when no group is selected', () => {
+    renderGroupsScreen({
+      selectedGroup: null,
+      recipesForSelectedGroup: [],
+    });
+
+    expect(screen.getByText('Choose a group')).toBeTruthy();
+    expect(screen.getByText('Select a collection to rename it or browse its recipes.')).toBeTruthy();
   });
 });

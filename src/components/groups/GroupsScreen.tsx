@@ -14,7 +14,6 @@ export type GroupsScreenProps = {
   newGroupName: string;
   renameGroupName: string;
   syncError: string | null;
-  isRefreshing: boolean;
   refreshControl?: React.ReactElement<RefreshControlProps>;
   groupedRecipeCount: (groupId: string) => number;
   onNewGroupNameChange: (value: string) => void;

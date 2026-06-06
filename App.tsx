@@ -964,7 +964,6 @@ export default function App() {
             newGroupName={newGroupName}
             renameGroupName={renameGroupName}
             syncError={syncError}
-            isRefreshing={isRefreshing}
             refreshControl={
               cloudRepository ? (
                 <RefreshControl refreshing={isRefreshing} onRefresh={() => void reloadCloudState({ showRefreshing: true })} />
