@@ -45,6 +45,7 @@ import {
   recipeBookReducer,
   selectFilteredRecipes,
 } from './src/store/recipe-book';
+import { colors, radius, shadows, spacing, type } from './src/theme';
 
 const STORAGE_KEY = 'recipe-organizer-state-v1';
 
@@ -846,7 +847,7 @@ export default function App() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar style="dark" />
-        <LinearGradient colors={['#f8f0e7', '#f4ede4', '#fffaf5']} style={styles.authGradient}>
+        <LinearGradient colors={[colors.background, colors.surfaceWarm, colors.surface]} style={styles.authGradient}>
           <View style={styles.authShell}>
             <Text style={styles.eyebrow}>Recipe Organizer</Text>
             <Text style={styles.heroTitle}>Your household recipe library</Text>
@@ -857,14 +858,14 @@ export default function App() {
               <TextInput
                 autoCapitalize="none"
                 placeholder="Household email"
-                placeholderTextColor="#8a7866"
+                placeholderTextColor={colors.textSubtle}
                 style={styles.input}
                 value={householdEmail}
                 onChangeText={setHouseholdEmail}
               />
               <TextInput
                 placeholder="Password"
-                placeholderTextColor="#8a7866"
+                placeholderTextColor={colors.textSubtle}
                 secureTextEntry
                 style={styles.input}
                 value={householdPassword}
@@ -968,7 +969,7 @@ export default function App() {
             <View style={styles.inlineComposer}>
               <TextInput
                 placeholder="Create a group"
-                placeholderTextColor="#8a7866"
+                placeholderTextColor={colors.textSubtle}
                 style={[styles.input, styles.inlineInput]}
                 value={newGroupName}
                 onChangeText={setNewGroupName}
@@ -1022,7 +1023,7 @@ export default function App() {
                 <View style={styles.inlineComposer}>
                   <TextInput
                     placeholder="Rename group"
-                    placeholderTextColor="#8a7866"
+                    placeholderTextColor={colors.textSubtle}
                     style={[styles.input, styles.inlineInput]}
                     value={renameGroupName}
                     onChangeText={setRenameGroupName}
@@ -1068,16 +1069,16 @@ export default function App() {
             {!reviewDraft ? (
               <>
                 <View style={styles.panel}>
-                <Text style={styles.panelTitle}>From link</Text>
-                <Text style={styles.panelBody}>Paste a recipe URL and turn it into a review draft before saving.</Text>
-                <TextInput
+                  <Text style={styles.panelTitle}>From link</Text>
+                  <Text style={styles.panelBody}>Paste a recipe URL and turn it into a review draft before saving.</Text>
+                  <TextInput
                     autoCapitalize="none"
                     placeholder="https://example.com/cacio-e-pepe"
-                    placeholderTextColor="#8a7866"
+                    placeholderTextColor={colors.textSubtle}
                     style={styles.input}
-                  value={urlInput}
-                  onChangeText={setUrlInput}
-                />
+                    value={urlInput}
+                    onChangeText={setUrlInput}
+                  />
                   {importError && lastImportSourceType === 'url' ? (
                     <ImportFeedbackCard
                       title={getImportFeedbackTitle('url')}
@@ -1144,14 +1145,14 @@ export default function App() {
                 <TextInput
                   style={styles.input}
                   placeholder="Optional description"
-                  placeholderTextColor="#8a7866"
+                  placeholderTextColor={colors.textSubtle}
                   value={reviewDraft.description ?? ''}
                   onChangeText={(value) => setReviewDraft({ ...reviewDraft, description: value })}
                 />
                 <TextInput
                   style={styles.input}
                   placeholder="Servings"
-                  placeholderTextColor="#8a7866"
+                  placeholderTextColor={colors.textSubtle}
                   value={reviewDraft.servings ?? ''}
                   onChangeText={(value) => setReviewDraft({ ...reviewDraft, servings: value })}
                 />
@@ -1159,14 +1160,14 @@ export default function App() {
                   <TextInput
                     style={[styles.input, styles.inlineInput]}
                     placeholder="Prep time"
-                    placeholderTextColor="#8a7866"
+                    placeholderTextColor={colors.textSubtle}
                     value={reviewDraft.prepTime ?? ''}
                     onChangeText={(value) => setReviewDraft({ ...reviewDraft, prepTime: value })}
                   />
                   <TextInput
                     style={[styles.input, styles.inlineInput]}
                     placeholder="Cook time"
-                    placeholderTextColor="#8a7866"
+                    placeholderTextColor={colors.textSubtle}
                     value={reviewDraft.cookTime ?? ''}
                     onChangeText={(value) => setReviewDraft({ ...reviewDraft, cookTime: value })}
                   />
@@ -1379,7 +1380,7 @@ function formatLastSynced(value: string | null) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f7f1ea',
+    backgroundColor: colors.background,
   },
   authGradient: {
     flex: 1,
@@ -1387,108 +1388,104 @@ const styles = StyleSheet.create({
   authShell: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
-    gap: 18,
+    paddingHorizontal: spacing.xl,
+    gap: spacing.lg,
   },
   eyebrow: {
-    color: '#a86238',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
+    ...type.eyebrow,
+    color: colors.accent,
   },
   heroTitle: {
-    color: '#241711',
-    fontSize: 34,
-    fontWeight: '700',
-    lineHeight: 40,
+    ...type.title,
+    color: colors.text,
   },
   heroBody: {
-    color: '#5d4b3d',
-    fontSize: 16,
-    lineHeight: 24,
+    ...type.body,
+    color: colors.textMuted,
   },
   authCard: {
-    backgroundColor: 'rgba(255,255,255,0.88)',
-    borderColor: '#ead8c7',
-    borderRadius: 28,
+    ...shadows.floating,
+    backgroundColor: 'rgba(255,253,249,0.92)',
+    borderColor: colors.border,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    gap: 14,
-    padding: 20,
+    gap: spacing.sm,
+    padding: spacing.lg,
   },
   appShell: {
     flex: 1,
-    paddingHorizontal: 18,
-    paddingTop: 8,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
   },
   headerBar: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    marginBottom: 18,
-    minHeight: 18,
+    marginBottom: spacing.lg,
+    minHeight: 36,
   },
   headerUtilityButton: {
-    backgroundColor: '#efe1d3',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    backgroundColor: colors.surfaceWarm,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
   },
   headerUtilityButtonText: {
-    color: '#6e4b34',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    ...type.eyebrow,
+    color: colors.accentPressed,
   },
   tabBar: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 18,
+    gap: spacing.xs,
+    marginBottom: spacing.lg,
+    padding: spacing.xs,
   },
   tabButton: {
-    backgroundColor: '#efe6dd',
-    borderRadius: 18,
+    backgroundColor: 'transparent',
+    borderRadius: radius.md,
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: spacing.sm,
   },
   tabButtonActive: {
-    backgroundColor: '#a86238',
+    ...shadows.card,
+    backgroundColor: colors.surface,
   },
   tabButtonText: {
-    color: '#6d5647',
+    color: colors.textMuted,
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
     textAlign: 'center',
   },
   tabButtonTextActive: {
-    color: '#fff7f2',
+    color: colors.accentPressed,
   },
   screenContent: {
-    gap: 16,
+    gap: spacing.md,
     paddingBottom: 120,
   },
   sectionTitle: {
-    color: '#241711',
-    fontSize: 30,
-    fontWeight: '700',
+    ...type.sectionTitle,
+    color: colors.text,
   },
   sectionLabel: {
-    color: '#8a5b3f',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    ...type.eyebrow,
+    color: colors.accent,
   },
   input: {
-    backgroundColor: '#fffaf5',
-    borderColor: '#e6d5c5',
-    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
     borderWidth: 1,
-    color: '#241711',
+    color: colors.text,
     fontSize: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   multilineInput: {
     minHeight: 110,
@@ -1497,93 +1494,96 @@ const styles = StyleSheet.create({
   inlineComposer: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.sm,
   },
   inlineInput: {
     flex: 1,
   },
   primaryButton: {
-    backgroundColor: '#a86238',
-    borderRadius: 18,
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
     paddingVertical: 15,
   },
   primaryButtonCompact: {
-    backgroundColor: '#a86238',
-    borderRadius: 18,
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
     flex: 1,
     paddingVertical: 15,
   },
   primaryButtonLabel: {
-    color: '#fffaf5',
+    color: colors.surface,
     fontSize: 16,
     fontWeight: '700',
     textAlign: 'center',
   },
   secondaryButton: {
-    backgroundColor: '#efe6dd',
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
   secondaryButtonLabel: {
-    color: '#6d5647',
+    color: colors.textMuted,
     fontSize: 15,
     fontWeight: '700',
   },
   destructiveButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#fbe8e3',
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    backgroundColor: colors.dangerSoft,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
   destructiveButtonLabel: {
-    color: '#b33f2f',
+    color: colors.danger,
     fontSize: 15,
     fontWeight: '700',
   },
   supportText: {
-    color: '#7d6758',
+    color: colors.textSubtle,
     fontSize: 13,
     lineHeight: 18,
   },
   errorText: {
-    color: '#b33f2f',
+    color: colors.danger,
     fontSize: 14,
     fontWeight: '600',
   },
   panel: {
-    backgroundColor: '#fffaf5',
-    borderColor: '#e7d7c8',
-    borderRadius: 26,
+    ...shadows.card,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    gap: 14,
-    padding: 18,
+    gap: spacing.sm,
+    padding: spacing.lg,
   },
   panelTitle: {
-    color: '#241711',
+    color: colors.text,
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   panelBody: {
-    color: '#5d4b3d',
+    color: colors.textMuted,
     fontSize: 15,
     lineHeight: 22,
   },
   actionRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: spacing.xs,
   },
   groupRow: {
     alignItems: 'center',
-    backgroundColor: '#fffaf5',
-    borderColor: '#e7d7c8',
-    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 12,
-    padding: 14,
+    gap: spacing.sm,
+    padding: spacing.md,
   },
   groupRowMain: {
     flex: 1,
@@ -1591,85 +1591,89 @@ const styles = StyleSheet.create({
   groupRowActions: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.sm,
   },
   groupRowTitle: {
-    color: '#241711',
+    color: colors.text,
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   groupRowMeta: {
-    color: '#7d6758',
+    color: colors.textSubtle,
     fontSize: 14,
   },
   groupFavoriteButton: {
     alignItems: 'center',
-    backgroundColor: '#f2e8dc',
-    borderColor: '#e0c8b1',
-    borderRadius: 999,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.pill,
     borderWidth: 1,
     height: 34,
     justifyContent: 'center',
     width: 34,
   },
   groupFavoriteButtonActive: {
-    backgroundColor: '#f7e1c8',
-    borderColor: '#d59b60',
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accent,
   },
   groupFavoriteButtonLabel: {
-    color: '#8a5b3f',
+    color: colors.accentPressed,
     fontSize: 17,
     fontWeight: '700',
     lineHeight: 20,
   },
   groupFavoriteButtonLabelActive: {
-    color: '#9a5a1e',
+    color: colors.accentPressed,
   },
   destructiveAction: {
-    color: '#b33f2f',
+    color: colors.danger,
     fontSize: 14,
     fontWeight: '700',
   },
   groupRecipeCard: {
-    borderColor: '#eadfd3',
-    borderRadius: 18,
+    backgroundColor: colors.surfaceWarm,
+    borderColor: colors.border,
+    borderRadius: radius.md,
     borderWidth: 1,
-    gap: 4,
-    padding: 14,
+    gap: spacing.xxs,
+    padding: spacing.md,
   },
   groupRecipeTitle: {
-    color: '#241711',
+    color: colors.text,
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   groupRecipeMeta: {
-    color: '#5d4b3d',
+    color: colors.textMuted,
     fontSize: 14,
   },
   groupSelectionGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: spacing.xs,
   },
   groupSelectChip: {
-    backgroundColor: '#efe6dd',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
   },
   groupSelectChipActive: {
-    backgroundColor: '#2f6f5d',
+    backgroundColor: colors.success,
+    borderColor: colors.success,
   },
   groupSelectChipLabel: {
-    color: '#6d5647',
+    color: colors.textMuted,
     fontSize: 14,
     fontWeight: '700',
   },
   groupSelectChipLabelActive: {
-    color: '#f5fff8',
+    color: colors.white,
   },
   detailOverlay: {
-    backgroundColor: '#f7f1ea',
+    backgroundColor: colors.background,
     bottom: 0,
     left: 0,
     position: 'absolute',
@@ -1678,13 +1682,15 @@ const styles = StyleSheet.create({
   },
   inlineBackButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#efe6dd',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
   },
   inlineBackButtonLabel: {
-    color: '#6d5647',
+    color: colors.textMuted,
     fontSize: 14,
     fontWeight: '700',
   },

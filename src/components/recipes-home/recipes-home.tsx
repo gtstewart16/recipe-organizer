@@ -2,6 +2,7 @@ import { ImageBackground, ScrollView, StyleSheet, Text, TextInput, View } from '
 import { LinearGradient } from 'expo-linear-gradient';
 
 import type { RecipeGroup, RecipeRecord } from '../../store/recipe-book';
+import { colors, radius, shadows, spacing, type } from '../../theme';
 import { InteractivePressable } from '../InteractivePressable';
 import { SwipeToDeleteRow } from '../swipe-actions';
 
@@ -39,7 +40,7 @@ export function RecipesHome({
 
       <TextInput
         placeholder="Search recipes or groups"
-        placeholderTextColor="#8a7866"
+        placeholderTextColor={colors.textSubtle}
         style={styles.searchInput}
         value={searchQuery}
         onChangeText={onSearchQueryChange}
@@ -172,7 +173,7 @@ export function RecipeCard({ recipe, onDelete, onPress }: RecipeCardProps) {
           </ImageBackground>
         ) : (
           <LinearGradient
-            colors={['#f4e3d2', '#e7c8ab', '#f3e7dc']}
+            colors={[colors.surfaceWarm, colors.accentSoft, colors.surfaceMuted]}
             style={styles.recipeHeroFallback}
             testID="recipe-card-fallback"
           >
@@ -212,34 +213,32 @@ export function RecipeCard({ recipe, onDelete, onPress }: RecipeCardProps) {
 
 const styles = StyleSheet.create({
   screen: {
-    gap: 16,
+    gap: spacing.md,
   },
   headerCopy: {
-    gap: 8,
+    gap: spacing.xs,
   },
   sectionTitle: {
-    color: '#241711',
-    fontSize: 30,
-    fontWeight: '700',
-    lineHeight: 34,
+    ...type.sectionTitle,
+    color: colors.text,
   },
   sectionBody: {
-    color: '#5d4b3d',
+    color: colors.textMuted,
     fontSize: 15,
     lineHeight: 22,
   },
   searchInput: {
-    backgroundColor: '#fffaf5',
-    borderColor: '#e6d5c5',
-    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    color: '#241711',
+    color: colors.text,
     fontSize: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   sectionBlock: {
-    gap: 12,
+    gap: spacing.sm,
   },
   sectionHeader: {
     alignItems: 'baseline',
@@ -247,15 +246,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   sectionLabel: {
-    color: '#8a5b3f',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    ...type.eyebrow,
+    color: colors.accent,
   },
   groupRow: {
-    gap: 12,
-    paddingRight: 8,
+    gap: spacing.sm,
+    paddingRight: spacing.xs,
   },
   groupCardShell: {
     position: 'relative',
@@ -266,9 +262,10 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
   groupCard: {
-    backgroundColor: '#fff7ef',
-    borderColor: '#ead5c2',
-    borderRadius: 22,
+    ...shadows.card,
+    backgroundColor: colors.surfaceWarm,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
     borderWidth: 1,
     flexDirection: 'row',
     minHeight: 84,
@@ -276,58 +273,59 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   groupCardAccent: {
-    backgroundColor: '#d9a06f',
+    backgroundColor: colors.accentSoft,
     width: 7,
   },
   groupCardAccentFavorite: {
-    backgroundColor: '#be7c46',
+    backgroundColor: colors.accent,
   },
   groupCardBody: {
     flex: 1,
-    gap: 4,
+    gap: spacing.xxs,
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
   groupCardTitle: {
-    color: '#241711',
+    color: colors.text,
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '800',
     lineHeight: 18,
   },
   groupCardBodyText: {
-    color: '#6d5647',
+    color: colors.textMuted,
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     letterSpacing: 0.3,
   },
   groupStarButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,248,241,0.96)',
-    borderColor: '#ead5c2',
-    borderRadius: 999,
+    backgroundColor: 'rgba(255,253,249,0.96)',
+    borderColor: colors.border,
+    borderRadius: radius.pill,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 4,
-    paddingHorizontal: 8,
+    gap: spacing.xxs,
+    paddingHorizontal: spacing.xs,
     paddingVertical: 6,
     position: 'absolute',
-    right: 8,
-    top: 8,
+    right: spacing.xs,
+    top: spacing.xs,
   },
   groupStarIcon: {
-    color: '#8a5b3f',
+    color: colors.accentPressed,
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
     lineHeight: 16,
   },
   recipeList: {
-    gap: 14,
+    gap: spacing.md,
   },
   recipeCard: {
-    backgroundColor: '#fffaf5',
-    borderColor: '#e7d7c8',
-    borderRadius: 28,
+    ...shadows.card,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
     borderWidth: 1,
     overflow: 'hidden',
   },
@@ -340,86 +338,88 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   recipeHeroImageStyle: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
   },
   recipeHeroOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    padding: 16,
+    padding: spacing.md,
   },
   recipeHeroBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,250,245,0.92)',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: 'rgba(255,253,249,0.92)',
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
   recipeHeroBadgeLabel: {
-    color: '#6d5647',
+    color: colors.textMuted,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
   recipeHeroFallback: {
     flex: 1,
     justifyContent: 'center',
-    padding: 16,
+    padding: spacing.md,
   },
   recipeHeroFallbackInner: {
     alignItems: 'flex-start',
-    backgroundColor: 'rgba(255,250,245,0.72)',
-    borderRadius: 20,
+    backgroundColor: 'rgba(255,253,249,0.76)',
+    borderColor: 'rgba(216,198,182,0.72)',
+    borderRadius: radius.lg,
+    borderWidth: 1,
     gap: 6,
     maxWidth: '82%',
-    padding: 16,
+    padding: spacing.md,
   },
   recipeHeroFallbackLabel: {
-    color: '#6e291f',
+    color: colors.accentPressed,
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   recipeHeroFallbackBody: {
-    color: '#5d4b3d',
+    color: colors.textMuted,
     fontSize: 13,
     lineHeight: 18,
   },
   recipeCardBody: {
-    gap: 8,
-    padding: 16,
+    gap: spacing.xs,
+    padding: spacing.md,
   },
   recipeCardTitle: {
-    color: '#241711',
+    color: colors.text,
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '800',
     lineHeight: 25,
   },
   recipeCardMeta: {
-    color: '#8a5b3f',
+    color: colors.accent,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   recipeCardSnippet: {
-    color: '#5d4b3d',
+    color: colors.textMuted,
     fontSize: 15,
     lineHeight: 22,
   },
   emptyStateCard: {
-    backgroundColor: '#fff8f1',
-    borderColor: '#ead8c7',
-    borderRadius: 24,
+    backgroundColor: colors.surfaceWarm,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
     borderWidth: 1,
     gap: 6,
-    padding: 18,
+    padding: spacing.lg,
   },
   emptyStateTitle: {
-    color: '#241711',
+    color: colors.text,
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   emptyStateBody: {
-    color: '#5d4b3d',
+    color: colors.textMuted,
     fontSize: 14,
     lineHeight: 20,
   },
