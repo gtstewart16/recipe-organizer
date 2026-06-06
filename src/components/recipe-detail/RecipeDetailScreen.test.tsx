@@ -64,12 +64,13 @@ describe('RecipeDetailScreen', () => {
     expect(screen.getByText('Delete recipe')).toBeTruthy();
     expect(screen.getByText('Open original recipe')).toBeTruthy();
     expect(screen.getByTestId('recipe-detail-hero-image')).toBeTruthy();
+    expect(screen.getByLabelText('Close recipe detail')).toBeTruthy();
     expect(screen.getByTestId('recipe-detail-close-button')).toBeTruthy();
 
     fireEvent.press(screen.getByText('Edit recipe'));
     fireEvent.press(screen.getByTestId('recipe-detail-delete-button'));
     fireEvent.press(screen.getByText('Open original recipe'));
-    fireEvent.press(screen.getByTestId('recipe-detail-close-button'));
+    fireEvent.press(screen.getByLabelText('Close recipe detail'));
 
     expect(onEdit).toHaveBeenCalledTimes(1);
     expect(onDelete).toHaveBeenCalledTimes(1);

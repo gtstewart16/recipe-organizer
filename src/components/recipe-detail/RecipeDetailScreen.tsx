@@ -69,6 +69,8 @@ export function RecipeDetailScreen({
 
           <View style={[styles.heroChrome, { top: closeOffsetTop }]} testID="recipe-detail-close-chrome">
             <InteractivePressable
+              accessibilityLabel="Close recipe detail"
+              accessibilityRole="button"
               testID="recipe-detail-close-button"
               style={styles.closeButton}
               onPress={onClose}
