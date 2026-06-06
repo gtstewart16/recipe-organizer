@@ -40,6 +40,7 @@ import {
   RecipeRecord,
   recipeBookReducer,
   selectFilteredRecipes,
+  selectImportHistory,
 } from './src/store/recipe-book';
 import { colors, radius, shadows, spacing, type } from './src/theme';
 
@@ -277,6 +278,7 @@ export default function App() {
   }, [cloudRepository, hydrated, refreshTarget, signedIn]);
 
   const visibleRecipes = useMemo(() => selectFilteredRecipes(state, searchQuery), [searchQuery, state]);
+  const importHistory = useMemo(() => selectImportHistory(state), [state]);
   const favoriteGroups = useMemo(
     () => state.groups.filter((group) => group.isFavorite).sort((left, right) => left.name.localeCompare(right.name)),
     [state.groups]
@@ -507,7 +509,7 @@ export default function App() {
     await startUrlReview({ sourceUrl: urlInput });
   };
 
-  const beginPhotoReview = async (mode: 'camera' | 'library') => {
+  const beginPhotoReview = async (mode: 'camera' | 'library', existingJobId?: string) => {
     setLastImportSourceType('photo');
     setLastPhotoMode(mode);
     setImportError(null);
@@ -553,7 +555,7 @@ export default function App() {
           base64: asset.base64,
         }))
       );
-      const jobId = createImportJobId();
+      const jobId = existingJobId ?? createImportJobId();
       const timestamp = new Date().toISOString();
 
       setActiveImportJobId(jobId);
@@ -580,7 +582,7 @@ export default function App() {
       setActiveImportJobId(null);
       const timestamp = new Date().toISOString();
       await persistImportJob({
-        id: createImportJobId(),
+        id: existingJobId ?? createImportJobId(),
         sourceType: 'photo',
         sourcePhotoUris: result.assets.map((asset) => asset.uri),
         title: 'Cookbook Recipe Draft',
@@ -818,6 +820,44 @@ export default function App() {
     }
   };
 
+  const handleRetryImportJob = (job: ImportJob) => {
+    setImportError(null);
+
+    if (job.sourceType === 'url') {
+      if (!job.sourceUrl) {
+        Alert.alert('Cannot retry import', 'This saved import no longer has its original recipe link.');
+        return;
+      }
+
+      void startUrlReview({ sourceUrl: job.sourceUrl, existingJobId: job.id });
+      return;
+    }
+
+    Alert.alert('Cannot retry import', 'Photo imports need to be captured again from the camera or photo library.');
+  };
+
+  const handleResumeImportJob = (job: ImportJob) => {
+    if (!job.draft) {
+      Alert.alert('Cannot resume import', 'This import draft no longer has review details saved.');
+      return;
+    }
+
+    setImportError(null);
+    setActiveImportJobId(job.id);
+    setEditingRecipeId(null);
+    setReviewDraft({ ...job.draft, selectedGroupIds: [] });
+    setActiveTab('add');
+  };
+
+  const handleOpenImportRecipe = (job: ImportJob) => {
+    if (!job.recipeId) {
+      Alert.alert('Recipe unavailable', 'This saved import is no longer linked to a recipe.');
+      return;
+    }
+
+    setSelectedRecipeId(job.recipeId);
+  };
+
   if (isSettingsOpen) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -995,6 +1035,12 @@ export default function App() {
             lastImportSourceType={lastImportSourceType}
             isImportingUrl={isImportingUrl}
             isImportingPhoto={isImportingPhoto}
+            importHistory={{
+              history: importHistory,
+              onRetryImport: handleRetryImportJob,
+              onResumeReview: handleResumeImportJob,
+              onOpenRecipe: handleOpenImportRecipe,
+            }}
             refreshControl={
               cloudRepository && !reviewDraft ? (
                 <RefreshControl refreshing={isRefreshing} onRefresh={() => void reloadCloudState({ showRefreshing: true })} />

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Alert, AppState, type AppStateStatus } from 'react-native';
 
-import type { RecipeBookState } from './src/store/recipe-book';
+import type { ImportJob, RecipeBookState } from './src/store/recipe-book';
 
 const mockCloudState: RecipeBookState = {
   groups: [
@@ -54,6 +54,50 @@ const importedCloudState: RecipeBookState = {
     },
   ],
   memberships: [...mockCloudState.memberships, { recipeId: 'recipe-2', groupId: 'group-weeknight' }],
+};
+
+const failedUrlImportJob: ImportJob = {
+  id: 'job-failed-url',
+  sourceType: 'url',
+  sourceUrl: 'https://example.com/cacio-e-pepe',
+  sourcePhotoUris: [],
+  title: 'Cacio E Pepe',
+  status: 'failed',
+  errorMessage: 'The page did not include recipe instructions.',
+  createdAt: '2026-04-05T10:00:00.000Z',
+  updatedAt: '2026-04-05T10:00:00.000Z',
+};
+
+const inReviewImportJob: ImportJob = {
+  id: 'job-review-url',
+  sourceType: 'url',
+  sourceUrl: 'https://example.com/cacio-e-pepe',
+  sourcePhotoUris: [],
+  title: 'Cacio E Pepe',
+  status: 'in_review',
+  draft: {
+    title: 'Cacio E Pepe',
+    sourceType: 'url',
+    sourceUrl: 'https://example.com/cacio-e-pepe',
+    sourcePhotoUris: [],
+    ingredients: ['12 ounces spaghetti', '2 cups pecorino romano'],
+    instructions: ['Cook the pasta.', 'Toss with cheese and pepper.'],
+    status: 'needs_review',
+  },
+  createdAt: '2026-04-05T10:01:00.000Z',
+  updatedAt: '2026-04-05T10:01:00.000Z',
+};
+
+const savedImportJob: ImportJob = {
+  id: 'job-saved-url',
+  sourceType: 'url',
+  sourceUrl: 'https://example.com/jalapeno-popper-turkey-burgers',
+  sourcePhotoUris: [],
+  title: 'Jalapeño Popper Turkey Burgers',
+  status: 'saved',
+  recipeId: 'recipe-1',
+  createdAt: '2026-04-05T10:02:00.000Z',
+  updatedAt: '2026-04-05T10:02:00.000Z',
 };
 
 const mockRepository = {
@@ -601,6 +645,69 @@ describe('Recipe Organizer app', () => {
 
     expect(await screen.findByText('Review import')).toBeTruthy();
     expect(screen.queryByText(/Last synced|Refreshing your shared library/i)).toBeNull();
+  });
+
+  it('retries a failed URL import from import history using the same job', async () => {
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    mockRepository.loadState.mockResolvedValueOnce({
+      ...mockCloudState,
+      importJobs: [failedUrlImportJob],
+    });
+
+    await pressPrimaryTab('Add');
+    expect(await screen.findByText('Needs attention')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Retry'));
+
+    expect(await screen.findByText('Review import')).toBeTruthy();
+    expect(screen.getByDisplayValue('Cacio E Pepe')).toBeTruthy();
+    await waitFor(() => {
+      expect(mockRepository.upsertImportJob).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'job-failed-url',
+          status: 'in_review',
+          sourceUrl: 'https://example.com/cacio-e-pepe',
+        })
+      );
+    });
+  });
+
+  it('resumes an in-review import from import history', async () => {
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    mockRepository.loadState.mockResolvedValueOnce({
+      ...mockCloudState,
+      importJobs: [inReviewImportJob],
+    });
+
+    await pressPrimaryTab('Add');
+    expect(await screen.findByText('In review')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Resume review'));
+
+    expect(screen.getByText('Review import')).toBeTruthy();
+    expect(screen.getByDisplayValue('Cacio E Pepe')).toBeTruthy();
+  });
+
+  it('opens a saved import recipe from import history', async () => {
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    mockRepository.loadState.mockResolvedValueOnce({
+      ...mockCloudState,
+      importJobs: [savedImportJob],
+    });
+
+    await pressPrimaryTab('Add');
+    expect(await screen.findByText('Recently saved')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Open recipe'));
+
+    expect(screen.getByTestId('recipe-detail-screen')).toBeTruthy();
+    expect(screen.getAllByText('Jalapeño Popper Turkey Burgers').length).toBeGreaterThan(0);
   });
 
   it('keeps the add review flow inside a scroll view so lower controls remain reachable', async () => {

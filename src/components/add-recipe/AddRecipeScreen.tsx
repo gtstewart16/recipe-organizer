@@ -12,6 +12,7 @@ import type { RecipeDraft, RecipeGroup } from '../../store/recipe-book';
 import { colors, radius, shadows, spacing, type } from '../../theme';
 import { ImportFeedbackCard } from '../ImportFeedbackCard';
 import { InteractivePressable } from '../InteractivePressable';
+import { ImportHistorySection, type ImportHistorySectionProps } from '../import-history';
 
 export type EditableReviewDraft = RecipeDraft & {
   selectedGroupIds: string[];
@@ -25,6 +26,7 @@ export type AddRecipeScreenProps = {
   lastImportSourceType: ImportFeedbackSourceType | null;
   isImportingUrl: boolean;
   isImportingPhoto: boolean;
+  importHistory?: ImportHistorySectionProps;
   refreshControl?: React.ReactElement<RefreshControlProps>;
   onUrlInputChange: (value: string) => void;
   onBeginUrlReview: () => void;
@@ -45,6 +47,7 @@ export function AddRecipeScreen({
   lastImportSourceType,
   isImportingUrl,
   isImportingPhoto,
+  importHistory,
   refreshControl,
   onUrlInputChange,
   onBeginUrlReview,
@@ -117,6 +120,7 @@ export function AddRecipeScreen({
               />
             ) : null}
           </View>
+          {importHistory ? <ImportHistorySection {...importHistory} /> : null}
         </>
       ) : (
         <View style={styles.panel}>

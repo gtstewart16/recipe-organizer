@@ -24,6 +24,28 @@ const reviewDraft: EditableReviewDraft = {
   selectedGroupIds: ['group-weeknight'],
 };
 
+const importHistory: NonNullable<React.ComponentProps<typeof AddRecipeScreen>['importHistory']> = {
+  history: {
+    failed: [],
+    inReview: [
+      {
+        id: 'job-review',
+        sourceType: 'url',
+        sourceUrl: 'https://example.com/cacio-e-pepe',
+        sourcePhotoUris: [],
+        title: 'Cacio E Pepe',
+        status: 'in_review',
+        createdAt: '2026-04-05T10:00:00.000Z',
+        updatedAt: '2026-04-05T10:00:00.000Z',
+      },
+    ],
+    saved: [],
+  },
+  onRetryImport: jest.fn(),
+  onResumeReview: jest.fn(),
+  onOpenRecipe: jest.fn(),
+};
+
 function renderAddRecipeScreen(overrides: Partial<React.ComponentProps<typeof AddRecipeScreen>> = {}) {
   const props: React.ComponentProps<typeof AddRecipeScreen> = {
     groups,
@@ -73,6 +95,30 @@ describe('AddRecipeScreen', () => {
 
     fireEvent.press(screen.getByText('Photo library'));
     expect(props.onBeginPhotoReview).toHaveBeenCalledWith('library');
+  });
+
+  it('renders import history below the landing import panels', () => {
+    renderAddRecipeScreen({
+      importHistory,
+    });
+
+    const linkPanel = screen.getByText('From link');
+    const photoPanel = screen.getByText('From photo');
+    const history = screen.getByText('Import history');
+
+    expect(linkPanel).toBeTruthy();
+    expect(photoPanel).toBeTruthy();
+    expect(history).toBeTruthy();
+  });
+
+  it('hides import history while reviewing a draft', () => {
+    renderAddRecipeScreen({
+      reviewDraft,
+      importHistory,
+    });
+
+    expect(screen.getByText('Review import')).toBeTruthy();
+    expect(screen.queryByText('Import history')).toBeNull();
   });
 
   it('renders URL import feedback actions', () => {
