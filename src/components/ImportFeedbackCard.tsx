@@ -1,4 +1,7 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+
+import { colors, radius, spacing } from '../theme';
+import { InteractivePressable } from './InteractivePressable';
 
 export type ImportFeedbackTone = 'error' | 'info';
 
@@ -59,24 +62,24 @@ export function ImportFeedbackCard({
       {primaryAction || secondaryAction ? (
         <View style={styles.actionsRow}>
           {secondaryAction ? (
-            <Pressable
+            <InteractivePressable
               accessibilityRole="button"
               accessibilityLabel={secondaryAction.accessibilityLabel ?? secondaryAction.label}
               style={[styles.secondaryButton, { borderColor: palette.buttonBorder }]}
               onPress={secondaryAction.onPress}
             >
               <Text style={[styles.secondaryButtonLabel, { color: palette.buttonText }]}>{secondaryAction.label}</Text>
-            </Pressable>
+            </InteractivePressable>
           ) : null}
           {primaryAction ? (
-            <Pressable
+            <InteractivePressable
               accessibilityRole="button"
               accessibilityLabel={primaryAction.accessibilityLabel ?? primaryAction.label}
               style={[styles.primaryButton, { backgroundColor: palette.buttonBackground }]}
               onPress={primaryAction.onPress}
             >
               <Text style={styles.primaryButtonLabel}>{primaryAction.label}</Text>
-            </Pressable>
+            </InteractivePressable>
           ) : null}
         </View>
       ) : null}
@@ -95,30 +98,30 @@ type Palette = {
 };
 
 const errorPalette: Palette = {
-  background: '#fff6f2',
-  border: '#e8c9bc',
-  badgeBackground: '#f6dfd7',
-  badgeText: '#8f4e33',
-  buttonBackground: '#a86238',
-  buttonBorder: '#d9b49d',
-  buttonText: '#6e4b34',
+  background: colors.dangerSoft,
+  border: colors.borderStrong,
+  badgeBackground: colors.surface,
+  badgeText: colors.danger,
+  buttonBackground: colors.accent,
+  buttonBorder: colors.borderStrong,
+  buttonText: colors.accentPressed,
 };
 
 const infoPalette: Palette = {
-  background: '#f3f7f2',
-  border: '#d7e3d8',
-  badgeBackground: '#dfeadf',
-  badgeText: '#4e6c57',
-  buttonBackground: '#2f6f5d',
-  buttonBorder: '#bcd0bf',
-  buttonText: '#2d5849',
+  background: colors.successSoft,
+  border: colors.border,
+  badgeBackground: colors.surface,
+  badgeText: colors.success,
+  buttonBackground: colors.success,
+  buttonBorder: colors.borderStrong,
+  buttonText: colors.success,
 };
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 24,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    gap: 12,
+    gap: spacing.sm,
     padding: 18,
   },
   headerRow: {
@@ -127,8 +130,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   badge: {
-    borderRadius: 999,
-    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 7,
   },
   badgeLabel: {
@@ -138,21 +141,21 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   title: {
-    color: '#241711',
+    color: colors.text,
     fontSize: 20,
     fontWeight: '700',
     lineHeight: 26,
   },
   message: {
-    color: '#5d4b3d',
+    color: colors.textMuted,
     fontSize: 15,
     lineHeight: 22,
   },
   guidanceList: {
-    gap: 8,
+    gap: spacing.xs,
   },
   guidanceItem: {
-    color: '#6d5647',
+    color: colors.textMuted,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -160,23 +163,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-    marginTop: 4,
+    marginTop: spacing.xxs,
   },
   primaryButton: {
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   primaryButtonLabel: {
-    color: '#fff7f2',
+    color: colors.white,
     fontSize: 15,
     fontWeight: '700',
   },
   secondaryButton: {
-    borderRadius: 18,
+    borderRadius: radius.md,
     borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   secondaryButtonLabel: {
     fontSize: 15,

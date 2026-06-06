@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react-native';
 
 import { CloudSyncStatus } from './CloudSyncStatus';
+import { colors } from '../theme';
 
 describe('CloudSyncStatus', () => {
   it('shows a loading state with an activity indicator and compact copy', () => {
@@ -30,7 +31,7 @@ describe('CloudSyncStatus', () => {
     expect(screen.getByText('Everything is up to date.')).toBeTruthy();
     expect(screen.getByTestId('cloud-sync-status-badge')).toBeTruthy();
     expect(screen.getByTestId('cloud-sync-status-root')).toHaveStyle({
-      backgroundColor: '#f3faf4',
+      backgroundColor: colors.successSoft,
     });
   });
 });

@@ -1,5 +1,7 @@
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
+import { colors, radius, spacing } from '../theme';
+
 export type CloudSyncStatusState = 'loading' | 'error' | 'success' | 'info';
 
 export type CloudSyncStatusProps = {
@@ -21,43 +23,43 @@ type StatusTheme = {
 
 const STATUS_THEMES: Record<CloudSyncStatusState, StatusTheme> = {
   loading: {
-    backgroundColor: '#fff7f0',
-    borderColor: '#ead8c7',
-    badgeBackgroundColor: '#efe1d3',
-    badgeTextColor: '#7a563c',
-    titleColor: '#241711',
-    messageColor: '#5d4b3d',
-    indicatorColor: '#a86238',
+    backgroundColor: colors.surfaceWarm,
+    borderColor: colors.border,
+    badgeBackgroundColor: colors.accentSoft,
+    badgeTextColor: colors.accentPressed,
+    titleColor: colors.text,
+    messageColor: colors.textMuted,
+    indicatorColor: colors.accent,
     badgeLabel: 'Syncing',
   },
   error: {
-    backgroundColor: '#fff2ee',
-    borderColor: '#f0c9bf',
-    badgeBackgroundColor: '#fbe8e3',
-    badgeTextColor: '#b33f2f',
-    titleColor: '#6e291f',
-    messageColor: '#7a4a41',
-    indicatorColor: '#b33f2f',
+    backgroundColor: colors.dangerSoft,
+    borderColor: colors.borderStrong,
+    badgeBackgroundColor: colors.surface,
+    badgeTextColor: colors.danger,
+    titleColor: colors.danger,
+    messageColor: colors.textMuted,
+    indicatorColor: colors.danger,
     badgeLabel: 'Needs attention',
   },
   success: {
-    backgroundColor: '#f3faf4',
-    borderColor: '#d7e9d8',
-    badgeBackgroundColor: '#e4f1e5',
-    badgeTextColor: '#2f6f5d',
-    titleColor: '#1f3f35',
-    messageColor: '#4e645c',
-    indicatorColor: '#2f6f5d',
+    backgroundColor: colors.successSoft,
+    borderColor: colors.border,
+    badgeBackgroundColor: colors.surface,
+    badgeTextColor: colors.success,
+    titleColor: colors.success,
+    messageColor: colors.textMuted,
+    indicatorColor: colors.success,
     badgeLabel: 'Up to date',
   },
   info: {
-    backgroundColor: '#f5f7fb',
-    borderColor: '#dbe1ee',
-    badgeBackgroundColor: '#e7ecf5',
-    badgeTextColor: '#52607a',
-    titleColor: '#233047',
-    messageColor: '#51607b',
-    indicatorColor: '#52607a',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.borderStrong,
+    badgeBackgroundColor: colors.surface,
+    badgeTextColor: colors.textMuted,
+    titleColor: colors.text,
+    messageColor: colors.textMuted,
+    indicatorColor: colors.textSubtle,
     badgeLabel: 'Shared library',
   },
 };
@@ -98,12 +100,12 @@ export function CloudSyncStatus({ state, title, message }: CloudSyncStatusProps)
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 22,
+    borderRadius: radius.lg,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   contentRow: {
     flex: 1,
@@ -111,24 +113,24 @@ const styles = StyleSheet.create({
   contentRowInner: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.sm,
   },
   badge: {
     alignItems: 'center',
     alignSelf: 'flex-start',
-    borderRadius: 999,
+    borderRadius: radius.pill,
     flexDirection: 'row',
     gap: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 7,
   },
   badgeSpinner: {
     marginRight: 2,
   },
   badgeDot: {
-    borderRadius: 999,
-    height: 8,
-    width: 8,
+    borderRadius: radius.pill,
+    height: spacing.xs,
+    width: spacing.xs,
   },
   badgeLabel: {
     fontSize: 12,

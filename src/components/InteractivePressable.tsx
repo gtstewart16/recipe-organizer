@@ -4,6 +4,7 @@ import {
   type PressableProps,
   type StyleProp,
   type TextStyle,
+  type ViewStyle,
 } from 'react-native';
 
 export type InteractivePressableChildState = {
@@ -19,11 +20,15 @@ export type InteractivePressableProps = Omit<PressableProps, 'children'> & {
   style?: PressableProps['style'];
 };
 
+const defaultPressedStyle: ViewStyle = {
+  opacity: 0.78,
+};
+
 export function InteractivePressable({
   children,
   textStyle,
   pressedOpacity = 0.92,
-  pressedScale = 0.985,
+  pressedScale: _pressedScale = 0.985,
   accessibilityRole = 'button',
   onPressIn,
   onPressOut,
@@ -54,10 +59,7 @@ export function InteractivePressable({
       onPressOut={handlePressOut}
       style={({ pressed: nativePressed }) => [
         typeof style === 'function' ? style({ pressed: nativePressed }) : style,
-        (pressed || nativePressed) && {
-          opacity: pressedOpacity,
-          transform: [{ scale: pressedScale }],
-        },
+        (pressed || nativePressed) && defaultPressedStyle,
       ]}
       {...rest}
     >
