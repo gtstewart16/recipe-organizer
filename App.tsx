@@ -17,19 +17,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CloudSyncStatus } from './src/components/CloudSyncStatus';
-import { ImportFeedbackCard } from './src/components/ImportFeedbackCard';
 import { InteractivePressable } from './src/components/InteractivePressable';
+import { AddRecipeScreen, type EditableReviewDraft } from './src/components/add-recipe';
 import { GroupsScreen } from './src/components/groups';
 import { RecipeDetailScreen } from './src/components/recipe-detail/RecipeDetailScreen';
 import { RecipesHome } from './src/components/recipes-home';
 import { SettingsScreen } from './src/components/settings';
 import { clearAuthSession, loadAuthSession, persistAuthSession } from './src/lib/auth-session';
-import {
-  getImportFallbackGuidance,
-  getImportFeedbackTitle,
-  getImportRetryLabel,
-  type ImportFeedbackSourceType,
-} from './src/lib/import-feedback';
+import type { ImportFeedbackSourceType } from './src/lib/import-feedback';
 import { createRecipeBookRepository, createSupabaseRecipeBookPersistence } from './src/lib/recipe-book-repository';
 import { supabase } from './src/lib/supabase';
 import { importRecipeFromPhoto } from './src/services/photo-import';
@@ -55,10 +50,6 @@ const HOUSEHOLD_PASSWORD = 'password123';
 const initialSeedState = seedRecipeBookState();
 
 type TabId = 'recipes' | 'groups' | 'add';
-
-type EditableReviewDraft = RecipeDraft & {
-  selectedGroupIds: string[];
-};
 
 export default function App() {
   const isTestEnv = process.env.NODE_ENV === 'test';
@@ -983,180 +974,39 @@ export default function App() {
         ) : null}
 
         {activeTab === 'add' ? (
-          <ScrollView
-            testID="add-scroll-view"
-            contentContainerStyle={styles.screenContent}
-            keyboardShouldPersistTaps="handled"
+          <AddRecipeScreen
+            groups={state.groups}
+            reviewDraft={reviewDraft}
+            urlInput={urlInput}
+            importError={importError}
+            lastImportSourceType={lastImportSourceType}
+            isImportingUrl={isImportingUrl}
+            isImportingPhoto={isImportingPhoto}
             refreshControl={
               cloudRepository && !reviewDraft ? (
                 <RefreshControl refreshing={isRefreshing} onRefresh={() => void reloadCloudState({ showRefreshing: true })} />
               ) : undefined
             }
-          >
-            <Text style={styles.sectionTitle}>Add</Text>
-            {!reviewDraft ? (
-              <>
-                <View style={styles.panel}>
-                  <Text style={styles.panelTitle}>From link</Text>
-                  <Text style={styles.panelBody}>Paste a recipe URL and turn it into a review draft before saving.</Text>
-                  <TextInput
-                    autoCapitalize="none"
-                    placeholder="https://example.com/cacio-e-pepe"
-                    placeholderTextColor={colors.textSubtle}
-                    style={styles.input}
-                    value={urlInput}
-                    onChangeText={setUrlInput}
-                  />
-                  {importError && lastImportSourceType === 'url' ? (
-                    <ImportFeedbackCard
-                      title={getImportFeedbackTitle('url')}
-                      message={importError}
-                      guidance={getImportFallbackGuidance('url')}
-                      primaryAction={{ label: getImportRetryLabel('url'), onPress: handleRetryImport }}
-                      secondaryAction={{ label: 'Dismiss', onPress: () => setImportError(null) }}
-                    />
-                  ) : null}
-                  <InteractivePressable style={styles.primaryButton} onPress={beginUrlReview}>
-                    <Text style={styles.primaryButtonLabel}>
-                      {isImportingUrl ? 'Importing recipe…' : 'Create review draft'}
-                    </Text>
-                  </InteractivePressable>
-                </View>
-                <View style={styles.panel}>
-                  <Text style={styles.panelTitle}>From photo</Text>
-                  <Text style={styles.panelBody}>Capture cookbook pages or import them from your library.</Text>
-                  <View style={styles.actionRow}>
-                    <InteractivePressable style={styles.secondaryButton} onPress={() => beginPhotoReview('camera')}>
-                      <Text style={styles.secondaryButtonLabel}>
-                        {isImportingPhoto ? 'Importing photo…' : 'Use camera'}
-                      </Text>
-                    </InteractivePressable>
-                    <InteractivePressable style={styles.secondaryButton} onPress={() => beginPhotoReview('library')}>
-                      <Text style={styles.secondaryButtonLabel}>
-                        {isImportingPhoto ? 'Importing photo…' : 'Photo library'}
-                      </Text>
-                    </InteractivePressable>
-                  </View>
-                  {importError && lastImportSourceType === 'photo' ? (
-                    <ImportFeedbackCard
-                      title={getImportFeedbackTitle('photo')}
-                      message={importError}
-                      guidance={getImportFallbackGuidance('photo')}
-                      primaryAction={{ label: getImportRetryLabel('photo'), onPress: handleRetryImport }}
-                      secondaryAction={{ label: 'Dismiss', onPress: () => setImportError(null) }}
-                    />
-                  ) : null}
-                </View>
-              </>
-            ) : (
-              <View style={styles.panel}>
-                <InteractivePressable
-                  style={styles.inlineBackButton}
-                  onPress={() => {
-                    skipNextAutoRefreshTargetRef.current = 'add';
-                    setReviewDraft(null);
-                    setActiveImportJobId(null);
-                    setEditingRecipeId(null);
-                  }}
-                >
-                  <Text style={styles.inlineBackButtonLabel}>Back to import</Text>
-                </InteractivePressable>
-                <Text style={styles.panelTitle}>Review import</Text>
-                <Text style={styles.panelBody}>
-                  Edit anything the parser missed, choose a group, then confirm the recipe to save it into your shared library.
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  value={reviewDraft.title}
-                  onChangeText={(value) => setReviewDraft({ ...reviewDraft, title: value })}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Optional description"
-                  placeholderTextColor={colors.textSubtle}
-                  value={reviewDraft.description ?? ''}
-                  onChangeText={(value) => setReviewDraft({ ...reviewDraft, description: value })}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Servings"
-                  placeholderTextColor={colors.textSubtle}
-                  value={reviewDraft.servings ?? ''}
-                  onChangeText={(value) => setReviewDraft({ ...reviewDraft, servings: value })}
-                />
-                <View style={styles.inlineComposer}>
-                  <TextInput
-                    style={[styles.input, styles.inlineInput]}
-                    placeholder="Prep time"
-                    placeholderTextColor={colors.textSubtle}
-                    value={reviewDraft.prepTime ?? ''}
-                    onChangeText={(value) => setReviewDraft({ ...reviewDraft, prepTime: value })}
-                  />
-                  <TextInput
-                    style={[styles.input, styles.inlineInput]}
-                    placeholder="Cook time"
-                    placeholderTextColor={colors.textSubtle}
-                    value={reviewDraft.cookTime ?? ''}
-                    onChangeText={(value) => setReviewDraft({ ...reviewDraft, cookTime: value })}
-                  />
-                </View>
-                <EditableListField
-                  label="Ingredients"
-                  lines={reviewDraft.ingredients}
-                  onChange={(lines) => setReviewDraft({ ...reviewDraft, ingredients: lines })}
-                />
-                <EditableListField
-                  label="Directions"
-                  lines={reviewDraft.instructions}
-                  onChange={(lines) => setReviewDraft({ ...reviewDraft, instructions: lines })}
-                />
-
-                <Text style={styles.sectionLabel}>Save to groups</Text>
-                <View style={styles.groupSelectionGrid}>
-                  {state.groups.map((group) => {
-                    const selected = reviewDraft.selectedGroupIds.includes(group.id);
-
-                    return (
-                      <InteractivePressable
-                        key={group.id}
-                        style={[styles.groupSelectChip, selected ? styles.groupSelectChipActive : null]}
-                        onPress={() =>
-                          setReviewDraft({
-                            ...reviewDraft,
-                            selectedGroupIds: selected
-                              ? reviewDraft.selectedGroupIds.filter((groupId) => groupId !== group.id)
-                              : [...reviewDraft.selectedGroupIds, group.id],
-                          })
-                        }
-                      >
-                        <Text style={[styles.groupSelectChipLabel, selected ? styles.groupSelectChipLabelActive : null]}>
-                          {group.name}
-                        </Text>
-                      </InteractivePressable>
-                    );
-                  })}
-                </View>
-                {importError ? <Text style={styles.errorText}>{importError}</Text> : null}
-
-                <View style={styles.actionRow}>
-                  <InteractivePressable
-                    style={styles.secondaryButton}
-                    onPress={() => {
-                      skipNextAutoRefreshTargetRef.current = 'add';
-                      setReviewDraft(null);
-                      setActiveImportJobId(null);
-                      setEditingRecipeId(null);
-                    }}
-                  >
-                    <Text style={styles.secondaryButtonLabel}>Discard draft</Text>
-                  </InteractivePressable>
-                  <InteractivePressable style={styles.primaryButtonCompact} onPress={handleSaveRecipe}>
-                    <Text style={styles.primaryButtonLabel}>Confirm recipe</Text>
-                  </InteractivePressable>
-                </View>
-              </View>
-            )}
-          </ScrollView>
+            onUrlInputChange={setUrlInput}
+            onBeginUrlReview={() => void beginUrlReview()}
+            onBeginPhotoReview={(mode) => void beginPhotoReview(mode)}
+            onRetryImport={handleRetryImport}
+            onDismissImportError={() => setImportError(null)}
+            onReviewDraftChange={setReviewDraft}
+            onBackToImport={() => {
+              skipNextAutoRefreshTargetRef.current = 'add';
+              setReviewDraft(null);
+              setActiveImportJobId(null);
+              setEditingRecipeId(null);
+            }}
+            onDiscardDraft={() => {
+              skipNextAutoRefreshTargetRef.current = 'add';
+              setReviewDraft(null);
+              setActiveImportJobId(null);
+              setEditingRecipeId(null);
+            }}
+            onSaveRecipe={() => void handleSaveRecipe()}
+          />
         ) : null}
 
         {selectedRecipe ? (
@@ -1175,28 +1025,6 @@ export default function App() {
         ) : null}
       </View>
     </SafeAreaView>
-  );
-}
-
-function EditableListField({
-  label,
-  lines,
-  onChange,
-}: {
-  label: string;
-  lines: string[];
-  onChange: (lines: string[]) => void;
-}) {
-  return (
-    <View>
-      <Text style={styles.sectionLabel}>{label}</Text>
-      <TextInput
-        multiline
-        style={[styles.input, styles.multilineInput]}
-        value={lines.join('\n')}
-        onChangeText={(value) => onChange(parseMultilineList(value))}
-      />
-    </View>
   );
 }
 
@@ -1397,14 +1225,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingBottom: 120,
   },
-  sectionTitle: {
-    ...type.sectionTitle,
-    color: colors.text,
-  },
-  sectionLabel: {
-    ...type.eyebrow,
-    color: colors.accent,
-  },
   input: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -1415,27 +1235,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  multilineInput: {
-    minHeight: 110,
-    textAlignVertical: 'top',
-  },
-  inlineComposer: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  inlineInput: {
-    flex: 1,
-  },
   primaryButton: {
     backgroundColor: colors.accent,
     borderRadius: radius.md,
-    paddingVertical: 15,
-  },
-  primaryButtonCompact: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    flex: 1,
     paddingVertical: 15,
   },
   primaryButtonLabel: {
@@ -1443,19 +1245,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     textAlign: 'center',
-  },
-  secondaryButton: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  secondaryButtonLabel: {
-    color: colors.textMuted,
-    fontSize: 15,
-    fontWeight: '700',
   },
   supportText: {
     color: colors.textSubtle,
@@ -1476,45 +1265,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.lg,
   },
-  panelTitle: {
-    color: colors.text,
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  panelBody: {
-    color: colors.textMuted,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  groupSelectionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  groupSelectChip: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  groupSelectChipActive: {
-    backgroundColor: colors.success,
-    borderColor: colors.success,
-  },
-  groupSelectChipLabel: {
-    color: colors.textMuted,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  groupSelectChipLabelActive: {
-    color: colors.white,
-  },
   detailOverlay: {
     backgroundColor: colors.background,
     bottom: 0,
@@ -1522,19 +1272,5 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     top: 0,
-  },
-  inlineBackButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  inlineBackButtonLabel: {
-    color: colors.textMuted,
-    fontSize: 14,
-    fontWeight: '700',
   },
 });
