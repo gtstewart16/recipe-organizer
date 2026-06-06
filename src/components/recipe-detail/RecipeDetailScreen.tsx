@@ -3,6 +3,7 @@ import { ImageBackground, ScrollView, StyleSheet, Text, View } from 'react-nativ
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 import { InteractivePressable } from '../InteractivePressable';
+import { colors, radius, shadows, spacing, type } from '../../theme';
 import { RecipeDirectionsSection } from './RecipeDirectionsSection';
 import { RecipeIngredientsSection } from './RecipeIngredientsSection';
 
@@ -103,10 +104,11 @@ export function RecipeDetailScreen({
           {recipe.description ? <Text style={styles.description}>{recipe.description}</Text> : null}
 
           <View style={styles.actionsRow}>
-            <InteractivePressable style={styles.secondaryButton} onPress={onEdit}>
+            <InteractivePressable accessibilityRole="button" style={styles.secondaryButton} onPress={onEdit}>
               <Text style={styles.secondaryButtonLabel}>Edit recipe</Text>
             </InteractivePressable>
             <InteractivePressable
+              accessibilityRole="button"
               style={styles.destructiveButton}
               onPress={onDelete}
               testID="recipe-detail-delete-button"
@@ -116,7 +118,7 @@ export function RecipeDetailScreen({
           </View>
 
           {recipe.sourceUrl && onOpenSource ? (
-            <InteractivePressable onPress={onOpenSource}>
+            <InteractivePressable accessibilityRole="button" onPress={onOpenSource} style={styles.sourceButton}>
               <Text style={styles.sourceLink}>Open original recipe</Text>
             </InteractivePressable>
           ) : null}
@@ -131,161 +133,179 @@ export function RecipeDetailScreen({
 
 const styles = StyleSheet.create({
   screen: {
-    backgroundColor: '#f7f1ea',
+    backgroundColor: colors.background,
     flex: 1,
   },
   content: {
-    paddingBottom: 40,
+    paddingBottom: spacing.xxl + spacing.lg,
   },
   heroShell: {
     position: 'relative',
   },
   hero: {
-    height: 360,
+    backgroundColor: colors.surfaceMuted,
+    height: 380,
     justifyContent: 'flex-end',
   },
   heroImage: {
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    borderBottomLeftRadius: radius.xxl,
+    borderBottomRightRadius: radius.xxl,
   },
   heroOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(36, 23, 17, 0.24)',
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    backgroundColor: 'rgba(33, 28, 24, 0.36)',
+    borderBottomLeftRadius: radius.xxl,
+    borderBottomRightRadius: radius.xxl,
   },
   heroTextWrap: {
-    gap: 6,
-    paddingHorizontal: 22,
-    paddingVertical: 26,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xxl,
   },
   heroFallback: {
-    backgroundColor: '#eadfd3',
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    backgroundColor: colors.surfaceMuted,
+    borderBottomLeftRadius: radius.xxl,
+    borderBottomRightRadius: radius.xxl,
     justifyContent: 'flex-end',
-    minHeight: 280,
-    paddingHorizontal: 22,
-    paddingVertical: 26,
+    minHeight: 320,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xxl,
   },
   heroChrome: {
-    left: 18,
+    left: spacing.lg,
     position: 'absolute',
     zIndex: 2,
   },
   closeButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255,247,239,0.96)',
-    borderRadius: 20,
-    height: 40,
+    backgroundColor: 'rgba(255, 253, 249, 0.96)',
+    borderColor: 'rgba(231, 217, 203, 0.92)',
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 44,
     justifyContent: 'center',
-    width: 40,
+    width: 44,
+    ...shadows.card,
   },
   closeButtonLabel: {
-    color: '#241711',
+    color: colors.text,
     fontSize: 28,
     fontWeight: '400',
     lineHeight: 28,
     marginTop: -2,
   },
   heroTitle: {
-    color: '#fff7f2',
-    fontSize: 34,
-    fontWeight: '700',
-    lineHeight: 40,
+    color: colors.white,
+    ...type.title,
+    textShadowColor: 'rgba(33, 28, 24, 0.32)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 12,
   },
   body: {
-    gap: 20,
-    paddingHorizontal: 20,
-    paddingTop: 20,
+    gap: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
   },
   description: {
-    color: '#5d4b3d',
+    color: colors.textMuted,
     fontSize: 16,
-    lineHeight: 24,
+    lineHeight: 26,
   },
   metadataGrid: {
     flexDirection: 'row',
-    gap: 10,
+    gap: spacing.sm,
   },
   metadataCard: {
-    backgroundColor: '#efe6dd',
-    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
     flex: 1,
-    gap: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    gap: spacing.xs,
+    minHeight: 78,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.md,
+    ...shadows.card,
   },
   metadataCardLabel: {
-    color: '#8a5b3f',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    color: colors.accent,
+    ...type.eyebrow,
   },
   metadataCardValue: {
-    color: '#6d5647',
-    fontSize: 14,
-    fontWeight: '700',
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '800',
+    lineHeight: 20,
   },
   groupsBlock: {
-    gap: 10,
+    gap: spacing.sm,
   },
   sectionLabel: {
-    color: '#8a5b3f',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    color: colors.accent,
+    ...type.eyebrow,
   },
   groupChips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: spacing.xs,
   },
   groupChip: {
-    backgroundColor: '#fff7ef',
-    borderColor: '#ead5c2',
-    borderRadius: 999,
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   groupChipLabel: {
-    color: '#5d4b3d',
+    color: colors.accentPressed,
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   actionsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: spacing.sm,
   },
   secondaryButton: {
-    backgroundColor: '#efe6dd',
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: colors.text,
+    borderRadius: radius.md,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
   secondaryButtonLabel: {
-    color: '#6d5647',
+    color: colors.surface,
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   destructiveButton: {
-    backgroundColor: '#fbe8e3',
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: colors.dangerSoft,
+    borderColor: 'rgba(179, 63, 47, 0.2)',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
   destructiveButtonLabel: {
-    color: '#b33f2f',
+    color: colors.danger,
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '800',
+  },
+  sourceButton: {
+    alignSelf: 'flex-start',
+    borderBottomColor: colors.accent,
+    borderBottomWidth: 1,
+    paddingBottom: spacing.xxs,
   },
   sourceLink: {
-    color: '#2c6a7c',
+    color: colors.accentPressed,
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '800',
   },
 });

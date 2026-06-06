@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { InteractivePressable } from '../InteractivePressable';
+import { colors, radius, shadows, spacing, type } from '../../theme';
 
 export type SettingsScreenProps = {
   onClose: () => void;
@@ -12,10 +13,14 @@ export function SettingsScreen({ onClose, onSignOut }: SettingsScreenProps) {
     <View style={styles.screen} testID="settings-screen">
       <View style={styles.chrome}>
         <View style={styles.header}>
-          <Text style={styles.title}>Settings</Text>
+          <View style={styles.titleBlock}>
+            <Text style={styles.eyebrow}>Kitchen Shelf</Text>
+            <Text style={styles.title}>Settings</Text>
+          </View>
 
           <InteractivePressable
             accessibilityLabel="Close settings"
+            accessibilityRole="button"
             onPress={onClose}
             style={styles.closeButton}
           >
@@ -24,13 +29,23 @@ export function SettingsScreen({ onClose, onSignOut }: SettingsScreenProps) {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>Account</Text>
-          <Text style={styles.cardDescription}>
-            Manage your session and leave the app when you&apos;re finished.
-          </Text>
+          <View style={styles.cardHeader}>
+            <View>
+              <Text style={styles.cardLabel}>Account</Text>
+              <Text style={styles.cardTitle}>Session</Text>
+            </View>
+            <View style={styles.statusPill}>
+              <Text style={styles.statusPillLabel}>Signed in</Text>
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
+          <Text style={styles.cardDescription}>Manage your session and leave the app when you&apos;re finished.</Text>
 
           <InteractivePressable
             accessibilityLabel="Sign out"
+            accessibilityRole="button"
             onPress={onSignOut}
             style={styles.signOutButton}
           >
@@ -44,72 +59,109 @@ export function SettingsScreen({ onClose, onSignOut }: SettingsScreenProps) {
 
 const styles = StyleSheet.create({
   screen: {
-    backgroundColor: '#f7f1ea',
+    backgroundColor: colors.background,
     flex: 1,
-    paddingTop: 56,
+    paddingTop: spacing.xxl + spacing.xl,
   },
   chrome: {
-    gap: 18,
-    paddingHorizontal: 20,
+    gap: spacing.xl,
+    paddingHorizontal: spacing.lg,
   },
   header: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  titleBlock: {
+    gap: spacing.xxs,
+  },
+  eyebrow: {
+    color: colors.accent,
+    ...type.eyebrow,
+  },
   title: {
-    color: '#241711',
-    fontSize: 34,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-    lineHeight: 40,
+    color: colors.text,
+    ...type.title,
   },
   closeButton: {
     alignItems: 'center',
-    backgroundColor: '#fff7ef',
-    borderRadius: 20,
-    height: 40,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 44,
     justifyContent: 'center',
-    width: 40,
+    width: 44,
+    ...shadows.card,
   },
   closeButtonLabel: {
-    color: '#241711',
+    color: colors.text,
     fontSize: 28,
     fontWeight: '400',
     lineHeight: 28,
     marginTop: -2,
   },
   card: {
-    backgroundColor: '#fff7ef',
-    borderColor: '#eadfd3',
-    borderRadius: 24,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    gap: 12,
-    padding: 20,
+    gap: spacing.md,
+    padding: spacing.lg,
+    ...shadows.card,
+  },
+  cardHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing.md,
+    justifyContent: 'space-between',
   },
   cardLabel: {
-    color: '#8a5b3f',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
+    color: colors.accent,
+    ...type.eyebrow,
+  },
+  cardTitle: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: '800',
+    lineHeight: 28,
+    marginTop: spacing.xxs,
+  },
+  statusPill: {
+    backgroundColor: colors.successSoft,
+    borderColor: 'rgba(47, 111, 93, 0.18)',
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  statusPillLabel: {
+    color: colors.success,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  divider: {
+    backgroundColor: colors.border,
+    height: 1,
   },
   cardDescription: {
-    color: '#5d4b3d',
+    color: colors.textMuted,
     fontSize: 15,
-    lineHeight: 22,
+    lineHeight: 24,
   },
   signOutButton: {
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#241711',
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    backgroundColor: colors.text,
+    borderRadius: radius.md,
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
   signOutButtonLabel: {
-    color: '#fff7ef',
+    color: colors.surface,
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
   },
 });

@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
+import { colors, radius, spacing, type } from '../../theme';
+
 export type RecipeDirectionsSectionProps = {
   instructions: string[];
   title?: string;
@@ -25,41 +27,45 @@ export function RecipeDirectionsSection({ instructions, title = 'Directions' }: 
 
 const styles = StyleSheet.create({
   section: {
-    gap: 14,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.lg,
   },
   sectionTitle: {
-    color: '#8a5b3f',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    color: colors.accent,
+    ...type.eyebrow,
   },
   list: {
-    gap: 14,
+    gap: spacing.lg,
   },
   stepRow: {
     alignItems: 'flex-start',
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.sm,
   },
   stepBadge: {
     alignItems: 'center',
-    backgroundColor: '#efe1d3',
-    borderRadius: 999,
-    height: 28,
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 32,
     justifyContent: 'center',
     marginTop: 1,
-    width: 28,
+    width: 32,
   },
   stepBadgeLabel: {
-    color: '#6e4b34',
+    color: colors.accentPressed,
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   stepText: {
-    color: '#3b2d24',
+    color: colors.text,
     flex: 1,
     fontSize: 16,
-    lineHeight: 24,
+    lineHeight: 28,
   },
 });

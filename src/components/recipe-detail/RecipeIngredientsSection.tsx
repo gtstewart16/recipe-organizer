@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
+import { colors, radius, spacing, type } from '../../theme';
+
 export type RecipeIngredientsSectionProps = {
   ingredients: string[];
   title?: string;
@@ -23,33 +25,36 @@ export function RecipeIngredientsSection({ ingredients, title = 'Ingredients' }:
 
 const styles = StyleSheet.create({
   section: {
-    gap: 14,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.lg,
   },
   sectionTitle: {
-    color: '#8a5b3f',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    color: colors.accent,
+    ...type.eyebrow,
   },
   list: {
-    gap: 14,
+    gap: spacing.md,
   },
   row: {
+    alignItems: 'flex-start',
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.sm,
   },
   bullet: {
-    backgroundColor: '#d9b49d',
-    borderRadius: 999,
-    height: 8,
-    marginTop: 8,
-    width: 8,
+    backgroundColor: colors.accent,
+    borderRadius: radius.pill,
+    height: 9,
+    marginTop: 10,
+    width: 9,
   },
   item: {
-    color: '#3b2d24',
+    color: colors.text,
     flex: 1,
     fontSize: 16,
-    lineHeight: 24,
+    lineHeight: 28,
   },
 });
