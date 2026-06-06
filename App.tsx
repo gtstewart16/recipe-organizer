@@ -19,10 +19,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CloudSyncStatus } from './src/components/CloudSyncStatus';
 import { ImportFeedbackCard } from './src/components/ImportFeedbackCard';
 import { InteractivePressable } from './src/components/InteractivePressable';
+import { GroupsScreen } from './src/components/groups';
 import { RecipeDetailScreen } from './src/components/recipe-detail/RecipeDetailScreen';
 import { RecipesHome } from './src/components/recipes-home';
 import { SettingsScreen } from './src/components/settings';
-import { SwipeToDeleteRow } from './src/components/swipe-actions';
 import { clearAuthSession, loadAuthSession, persistAuthSession } from './src/lib/auth-session';
 import {
   getImportFallbackGuidance,
@@ -956,102 +956,31 @@ export default function App() {
         ) : null}
 
         {activeTab === 'groups' ? (
-          <ScrollView
-            testID="groups-scroll-view"
-            contentContainerStyle={styles.screenContent}
+          <GroupsScreen
+            groups={state.groups}
+            orderedGroups={orderedGroups}
+            selectedGroup={selectedGroup}
+            recipesForSelectedGroup={selectedGroup ? recipesForGroup(state, selectedGroup.id) : []}
+            newGroupName={newGroupName}
+            renameGroupName={renameGroupName}
+            syncError={syncError}
+            isRefreshing={isRefreshing}
             refreshControl={
               cloudRepository ? (
                 <RefreshControl refreshing={isRefreshing} onRefresh={() => void reloadCloudState({ showRefreshing: true })} />
               ) : undefined
             }
-          >
-            <Text style={styles.sectionTitle}>Groups</Text>
-            <View style={styles.inlineComposer}>
-              <TextInput
-                placeholder="Create a group"
-                placeholderTextColor={colors.textSubtle}
-                style={[styles.input, styles.inlineInput]}
-                value={newGroupName}
-                onChangeText={setNewGroupName}
-              />
-              <InteractivePressable style={styles.secondaryButton} onPress={handleCreateGroup}>
-                <Text style={styles.secondaryButtonLabel}>Add</Text>
-              </InteractivePressable>
-            </View>
-            {syncError ? <Text style={styles.errorText}>{syncError}</Text> : null}
-
-            {orderedGroups.map((group) => (
-              <SwipeToDeleteRow
-                key={group.id}
-                actionLabel="Delete group"
-                actionTestID={`group-delete-${group.id}`}
-                contentTestID={`group-content-${group.id}`}
-                onAction={() => confirmDeleteGroup(group)}
-              >
-                <View style={styles.groupRow}>
-                  <InteractivePressable style={styles.groupRowMain} onPress={() => setSelectedGroupId(group.id)}>
-                    <View>
-                      <Text style={styles.groupRowTitle}>{group.name}</Text>
-                      <Text style={styles.groupRowMeta}>{groupedRecipeCount(group.id)} recipes</Text>
-                    </View>
-                  </InteractivePressable>
-                  <View style={styles.groupRowActions}>
-                    <InteractivePressable
-                      style={[styles.groupFavoriteButton, group.isFavorite ? styles.groupFavoriteButtonActive : undefined]}
-                      onPress={() => void handleToggleGroupFavorite(group)}
-                      accessibilityLabel={group.isFavorite ? `Remove ${group.name} from favorites` : `Favorite ${group.name}`}
-                      hitSlop={8}
-                      testID={`groups-favorite-button-${group.id}`}
-                    >
-                      <Text
-                        style={[
-                          styles.groupFavoriteButtonLabel,
-                          group.isFavorite ? styles.groupFavoriteButtonLabelActive : undefined,
-                        ]}
-                      >
-                        {group.isFavorite ? '★' : '☆'}
-                      </Text>
-                    </InteractivePressable>
-                  </View>
-                </View>
-              </SwipeToDeleteRow>
-            ))}
-
-            {selectedGroup ? (
-              <View style={styles.panel}>
-                <Text style={styles.panelTitle}>{selectedGroup.name}</Text>
-                <View style={styles.inlineComposer}>
-                  <TextInput
-                    placeholder="Rename group"
-                    placeholderTextColor={colors.textSubtle}
-                    style={[styles.input, styles.inlineInput]}
-                    value={renameGroupName}
-                    onChangeText={setRenameGroupName}
-                  />
-                  <InteractivePressable style={styles.secondaryButton} onPress={handleRenameGroup}>
-                    <Text style={styles.secondaryButtonLabel}>Rename</Text>
-                  </InteractivePressable>
-                </View>
-                {recipesForGroup(state, selectedGroup.id).map((recipe) => (
-                  <SwipeToDeleteRow
-                    key={recipe.id}
-                    actionLabel="Delete recipe"
-                    actionTestID={`group-recipe-delete-${recipe.id}`}
-                    contentTestID={`group-recipe-content-${recipe.id}`}
-                    onAction={() => confirmDeleteRecipe(recipe)}
-                  >
-                    <InteractivePressable
-                      style={styles.groupRecipeCard}
-                      onPress={() => setSelectedRecipeId(recipe.id)}
-                    >
-                      <Text style={styles.groupRecipeTitle}>{recipe.title}</Text>
-                      <Text style={styles.groupRecipeMeta}>{recipe.instructions[0]}</Text>
-                    </InteractivePressable>
-                  </SwipeToDeleteRow>
-                ))}
-              </View>
-            ) : null}
-          </ScrollView>
+            groupedRecipeCount={groupedRecipeCount}
+            onNewGroupNameChange={setNewGroupName}
+            onRenameGroupNameChange={setRenameGroupName}
+            onCreateGroup={handleCreateGroup}
+            onRenameGroup={handleRenameGroup}
+            onSelectGroup={setSelectedGroupId}
+            onToggleGroupFavorite={(group) => void handleToggleGroupFavorite(group)}
+            onDeleteGroup={confirmDeleteGroup}
+            onRecipePress={setSelectedRecipeId}
+            onRecipeDelete={confirmDeleteRecipe}
+          />
         ) : null}
 
         {activeTab === 'add' ? (
@@ -1529,18 +1458,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  destructiveButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.dangerSoft,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  destructiveButtonLabel: {
-    color: colors.danger,
-    fontSize: 15,
-    fontWeight: '700',
-  },
   supportText: {
     color: colors.textSubtle,
     fontSize: 13,
@@ -1573,79 +1490,6 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     gap: spacing.xs,
-  },
-  groupRow: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  groupRowMain: {
-    flex: 1,
-  },
-  groupRowActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  groupRowTitle: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  groupRowMeta: {
-    color: colors.textSubtle,
-    fontSize: 14,
-  },
-  groupFavoriteButton: {
-    alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.borderStrong,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    height: 34,
-    justifyContent: 'center',
-    width: 34,
-  },
-  groupFavoriteButtonActive: {
-    backgroundColor: colors.accentSoft,
-    borderColor: colors.accent,
-  },
-  groupFavoriteButtonLabel: {
-    color: colors.accentPressed,
-    fontSize: 17,
-    fontWeight: '700',
-    lineHeight: 20,
-  },
-  groupFavoriteButtonLabelActive: {
-    color: colors.accentPressed,
-  },
-  destructiveAction: {
-    color: colors.danger,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  groupRecipeCard: {
-    backgroundColor: colors.surfaceWarm,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    gap: spacing.xxs,
-    padding: spacing.md,
-  },
-  groupRecipeTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  groupRecipeMeta: {
-    color: colors.textMuted,
-    fontSize: 14,
   },
   groupSelectionGrid: {
     flexDirection: 'row',
