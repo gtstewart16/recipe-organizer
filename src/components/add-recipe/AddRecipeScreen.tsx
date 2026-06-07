@@ -123,6 +123,7 @@ export function AddRecipeScreen({
               />
             ) : null}
           </View>
+          {importError && !lastImportSourceType ? <Text style={styles.errorText}>{importError}</Text> : null}
           {sharedImportQueue ? <SharedImportQueue {...sharedImportQueue} /> : null}
           {importHistory ? <ImportHistorySection {...importHistory} /> : null}
         </>

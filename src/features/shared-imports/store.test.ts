@@ -94,6 +94,51 @@ describe('persisted shared import store', () => {
     expect(await store.list()).toEqual([]);
   });
 
+  it('enqueues concurrent records without losing either import', async () => {
+    const storage = createMemoryStorage();
+    const store = createPersistedSharedImportStore(storage);
+    const first = createPendingSharedImport({
+      id: 'share-1',
+      sourceKind: 'url',
+      payload: { url: 'https://example.com/cacio-e-pepe' },
+      createdAt: '2026-04-05T10:00:00.000Z',
+    });
+    const second = createPendingSharedImport({
+      id: 'share-2',
+      sourceKind: 'text',
+      payload: { text: 'Ingredients: rice' },
+      createdAt: '2026-04-05T10:01:00.000Z',
+    });
+
+    await Promise.all([store.enqueue(first), store.enqueue(second)]);
+
+    expect(await store.list()).toEqual([
+      expect.objectContaining({ id: 'share-2' }),
+      expect.objectContaining({ id: 'share-1' }),
+    ]);
+  });
+
+  it('dedupes enqueued records with the same shared payload', async () => {
+    const storage = createMemoryStorage();
+    const store = createPersistedSharedImportStore(storage);
+    const first = createPendingSharedImport({
+      id: 'share-1',
+      sourceKind: 'url',
+      payload: { url: 'https://example.com/cacio-e-pepe/' },
+      createdAt: '2026-04-05T10:00:00.000Z',
+    });
+    const duplicate = createPendingSharedImport({
+      id: 'share-2',
+      sourceKind: 'url',
+      payload: { url: 'https://example.com/cacio-e-pepe' },
+      createdAt: '2026-04-05T10:01:00.000Z',
+    });
+
+    expect(await store.enqueue(first)).toEqual(first);
+    expect(await store.enqueue(duplicate)).toEqual(first);
+    expect(await store.list()).toEqual([first]);
+  });
+
   it('replaces one existing record without dropping other queue items', async () => {
     const storage = createMemoryStorage();
     const store = createPersistedSharedImportStore(storage);

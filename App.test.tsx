@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
-import { Alert, AppState, type AppStateStatus } from 'react-native';
+import { Alert, AppState, Linking, type AppStateStatus } from 'react-native';
 
 import type { PendingSharedImport } from './src/features/shared-imports/types';
 import type { ImportJob, RecipeBookState } from './src/store/recipe-book';
@@ -240,6 +240,7 @@ const mockLoadAuthSession = jest.mocked(loadAuthSession);
 const mockPersistAuthSession = jest.mocked(persistAuthSession);
 const mockClearAuthSession = jest.mocked(clearAuthSession);
 const mockAsyncStorage = jest.mocked(AsyncStorage);
+let linkingUrlHandler: ((event: { url: string }) => void) | null = null;
 
 async function renderAppToSignInGate() {
   const rendered = render(<App />);
@@ -292,6 +293,12 @@ function seedSharedImportStorage(records: PendingSharedImport[]) {
 describe('Recipe Organizer app', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    linkingUrlHandler = null;
+    jest.spyOn(Linking, 'getInitialURL').mockResolvedValue(null);
+    jest.spyOn(Linking, 'addEventListener').mockImplementation((_eventType, handler) => {
+      linkingUrlHandler = handler as (event: { url: string }) => void;
+      return { remove: jest.fn() } as unknown as ReturnType<typeof Linking.addEventListener>;
+    });
     mockLoadAuthSession.mockResolvedValue(false);
     mockPersistAuthSession.mockResolvedValue(undefined);
     mockClearAuthSession.mockResolvedValue(undefined);
@@ -863,6 +870,77 @@ describe('Recipe Organizer app', () => {
 
     expect(screen.getByText('Review import')).toBeTruthy();
     expect(screen.getByDisplayValue('Mushroom Risotto')).toBeTruthy();
+  });
+
+  it('queues and processes a shared import from the initial deep link', async () => {
+    seedSharedImportStorage([]);
+    jest
+      .spyOn(Linking, 'getInitialURL')
+      .mockResolvedValue('kitchenshelf://share?url=https%3A%2F%2Fexample.com%2Fcacio-e-pepe');
+
+    await renderAppToSignInGate();
+    fireEvent.changeText(await screen.findByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+
+    expect(await screen.findByText('Shared imports')).toBeTruthy();
+    expect(await screen.findByText('Cacio E Pepe')).toBeTruthy();
+  });
+
+  it('queues and processes a shared import from an Expo Go deep link', async () => {
+    seedSharedImportStorage([]);
+    jest
+      .spyOn(Linking, 'getInitialURL')
+      .mockResolvedValue(
+        'exp://192.168.1.15:8081/--/share?url=https%3A%2F%2Fexample.com%2Fcacio-e-pepe'
+      );
+
+    await renderAppToSignInGate();
+    fireEvent.changeText(await screen.findByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+
+    expect(await screen.findByText('Shared imports')).toBeTruthy();
+    expect(await screen.findByText('Cacio E Pepe')).toBeTruthy();
+  });
+
+  it('queues and processes a shared import from a runtime deep link event', async () => {
+    seedSharedImportStorage([]);
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    await act(async () => {
+      linkingUrlHandler?.({
+        url: 'kitchenshelf://share?text=Ingredients%3A%20rice%0AInstructions%3A%20cook%20it',
+      });
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText('Shared imports')).toBeTruthy();
+    expect(await screen.findByText('Ingredients: rice')).toBeTruthy();
+  });
+
+  it('shows an Add-tab error when a deep link cannot be queued', async () => {
+    seedSharedImportStorage([]);
+    mockAsyncStorage.setItem.mockImplementation(async (key: string) => {
+      if (key === 'recipe-organizer-shared-imports-v1') {
+        throw new Error('storage full');
+      }
+    });
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    await act(async () => {
+      linkingUrlHandler?.({
+        url: 'kitchenshelf://share?text=Ingredients%3A%20rice',
+      });
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText('storage full')).toBeTruthy();
+    expect(screen.getByTestId('add-scroll-view')).toBeTruthy();
   });
 
   it('removes a shared import from the queue after confirming it', async () => {

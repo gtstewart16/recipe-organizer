@@ -25,6 +25,7 @@ import { RecipeDetailScreen } from './src/components/recipe-detail/RecipeDetailS
 import { RecipesHome } from './src/components/recipes-home';
 import { SettingsScreen } from './src/components/settings';
 import { clearAuthSession, loadAuthSession, persistAuthSession } from './src/lib/auth-session';
+import { createSharedImportFromDeepLink } from './src/features/shared-imports/deep-link';
 import { processPendingSharedImport } from './src/features/shared-imports/processor';
 import { sharedImportStore } from './src/features/shared-imports/store';
 import type { PendingSharedImport } from './src/features/shared-imports/types';
@@ -100,6 +101,7 @@ export default function App() {
   const [lastPhotoMode, setLastPhotoMode] = useState<'camera' | 'library'>('library');
   const previousRefreshTargetRef = useRef<string | null>(null);
   const skipNextAutoRefreshTargetRef = useRef<string | null>(null);
+  const didHandleInitialUrlRef = useRef(false);
   const lastAppStateRef = useRef(AppState.currentState);
 
   const markCloudSyncSuccess = () => {
@@ -356,6 +358,53 @@ export default function App() {
       setImportError(error instanceof Error ? error.message : 'We could not process shared imports.');
     }
   }, [refreshSharedImports]);
+
+  const handleSharedImportDeepLink = useCallback(
+    async (url: string) => {
+      const record = createSharedImportFromDeepLink(url);
+
+      if (!record) {
+        return;
+      }
+
+      try {
+        await sharedImportStore.enqueue(record);
+        setImportError(null);
+        setActiveTab('add');
+        await refreshAndProcessSharedImports();
+      } catch (error) {
+        setImportError(error instanceof Error ? error.message : 'We could not queue that shared import.');
+        setActiveTab('add');
+      }
+    },
+    [refreshAndProcessSharedImports]
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!didHandleInitialUrlRef.current) {
+      didHandleInitialUrlRef.current = true;
+      Linking.getInitialURL()
+        .then((url) => {
+          if (mounted && url) {
+            void handleSharedImportDeepLink(url);
+          }
+        })
+        .catch(() => {
+          // Ignore malformed or unavailable launch links.
+        });
+    }
+
+    const subscription = Linking.addEventListener('url', (event) => {
+      void handleSharedImportDeepLink(event.url);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, [handleSharedImportDeepLink]);
 
   useEffect(() => {
     if (!signedIn || !hydrated || activeTab !== 'add' || reviewDraft) {
