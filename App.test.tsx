@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { Alert, AppState, type AppStateStatus } from 'react-native';
 
+import type { PendingSharedImport } from './src/features/shared-imports/types';
 import type { ImportJob, RecipeBookState } from './src/store/recipe-book';
 
 const mockCloudState: RecipeBookState = {
@@ -112,6 +114,26 @@ const failedPhotoImportJob: ImportJob = {
   updatedAt: '2026-04-05T10:03:00.000Z',
 };
 
+const readySharedImport: PendingSharedImport = {
+  id: 'share-ready-url',
+  status: 'ready',
+  sourceKind: 'url',
+  sourceLabel: 'skinnytaste.com',
+  payload: { url: 'https://www.skinnytaste.com/mushroom-risotto' },
+  draft: {
+    title: 'Mushroom Risotto',
+    sourceType: 'url',
+    sourceUrl: 'https://www.skinnytaste.com/mushroom-risotto',
+    sourcePhotoUris: [],
+    ingredients: ['2 cups arborio rice'],
+    instructions: ['Heat the stock.', 'Stir the rice.'],
+    servings: '6 servings',
+    status: 'needs_review',
+  },
+  createdAt: '2026-06-07T10:00:00.000Z',
+  updatedAt: '2026-06-07T10:01:00.000Z',
+};
+
 const mockRepository = {
   loadState: jest.fn(async () => mockCloudState),
   createGroup: jest.fn(async () => mockCloudState),
@@ -217,6 +239,7 @@ import { clearAuthSession, loadAuthSession, persistAuthSession } from './src/lib
 const mockLoadAuthSession = jest.mocked(loadAuthSession);
 const mockPersistAuthSession = jest.mocked(persistAuthSession);
 const mockClearAuthSession = jest.mocked(clearAuthSession);
+const mockAsyncStorage = jest.mocked(AsyncStorage);
 
 async function renderAppToSignInGate() {
   const rendered = render(<App />);
@@ -251,6 +274,21 @@ async function signInToLibrary() {
   expect(await screen.findByTestId('recipes-scroll-view')).toBeTruthy();
 }
 
+function seedSharedImportStorage(records: PendingSharedImport[]) {
+  let value = JSON.stringify(records);
+
+  mockAsyncStorage.getItem.mockImplementation(async () => value);
+  mockAsyncStorage.setItem.mockImplementation(async (_key: string, nextValue: string) => {
+    value = nextValue;
+  });
+
+  return {
+    read() {
+      return JSON.parse(value) as PendingSharedImport[];
+    },
+  };
+}
+
 describe('Recipe Organizer app', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -278,6 +316,8 @@ describe('Recipe Organizer app', () => {
       recipes: [],
       memberships: [],
     });
+    mockAsyncStorage.getItem.mockResolvedValue(null);
+    mockAsyncStorage.setItem.mockResolvedValue(undefined);
   });
 
   it('shows the household sign-in gate before the library', async () => {
@@ -807,6 +847,80 @@ describe('Recipe Organizer app', () => {
 
     expect(screen.getByTestId('recipe-detail-screen')).toBeTruthy();
     expect(screen.getAllByText('Jalapeño Popper Turkey Burgers').length).toBeGreaterThan(0);
+  });
+
+  it('shows shared imports on Add and opens a ready item into review', async () => {
+    seedSharedImportStorage([readySharedImport]);
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+
+    expect(await screen.findByText('Shared imports')).toBeTruthy();
+    expect(screen.getByText('Mushroom Risotto')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Review draft'));
+
+    expect(screen.getByText('Review import')).toBeTruthy();
+    expect(screen.getByDisplayValue('Mushroom Risotto')).toBeTruthy();
+  });
+
+  it('removes a shared import from the queue after confirming it', async () => {
+    seedSharedImportStorage([readySharedImport]);
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+    fireEvent.press(await screen.findByText('Review draft'));
+    fireEvent.press(screen.getByText('Weeknight'));
+    fireEvent.press(screen.getByText('Confirm recipe'));
+
+    expect(await screen.findByPlaceholderText('Rename group')).toBeTruthy();
+    await waitFor(() => {
+      expect(mockAsyncStorage.setItem).toHaveBeenCalledWith(
+        'recipe-organizer-shared-imports-v1',
+        JSON.stringify([])
+      );
+    });
+  });
+
+  it('preserves shared import group selections when returning to the queue', async () => {
+    const storage = seedSharedImportStorage([readySharedImport]);
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+    fireEvent.press(await screen.findByText('Review draft'));
+    fireEvent.press(screen.getByText('Weeknight'));
+    fireEvent.press(screen.getByText('Back to import'));
+
+    expect(await screen.findByText('Shared imports')).toBeTruthy();
+    expect(storage.read()[0].draft).toEqual(
+      expect.objectContaining({
+        selectedGroupIds: ['group-weeknight'],
+      })
+    );
+
+    fireEvent.press(screen.getByText('Review draft'));
+    fireEvent.press(screen.getByText('Confirm recipe'));
+
+    expect(await screen.findByPlaceholderText('Rename group')).toBeTruthy();
+    expect(screen.queryByText('Choose at least one group before confirming the recipe.')).toBeNull();
+  });
+
+  it('finishes saving a shared import even if local queue cleanup fails', async () => {
+    seedSharedImportStorage([readySharedImport]);
+    mockAsyncStorage.setItem.mockRejectedValueOnce(new Error('storage full'));
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+    fireEvent.press(await screen.findByText('Review draft'));
+    fireEvent.press(screen.getByText('Weeknight'));
+    fireEvent.press(screen.getByText('Confirm recipe'));
+
+    expect(await screen.findByPlaceholderText('Rename group')).toBeTruthy();
+    expect(screen.queryByText('Review import')).toBeNull();
   });
 
   it('keeps the add review flow inside a scroll view so lower controls remain reachable', async () => {

@@ -3,7 +3,7 @@ import * as FileSystem from 'expo-file-system';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   Alert,
   AppState,
@@ -25,6 +25,9 @@ import { RecipeDetailScreen } from './src/components/recipe-detail/RecipeDetailS
 import { RecipesHome } from './src/components/recipes-home';
 import { SettingsScreen } from './src/components/settings';
 import { clearAuthSession, loadAuthSession, persistAuthSession } from './src/lib/auth-session';
+import { processPendingSharedImport } from './src/features/shared-imports/processor';
+import { sharedImportStore } from './src/features/shared-imports/store';
+import type { PendingSharedImport } from './src/features/shared-imports/types';
 import type { ImportFeedbackSourceType } from './src/lib/import-feedback';
 import { createRecipeBookRepository, createSupabaseRecipeBookPersistence } from './src/lib/recipe-book-repository';
 import { parseMultilineList } from './src/lib/recipe-text';
@@ -86,6 +89,8 @@ export default function App() {
   const [isImportingPhoto, setIsImportingPhoto] = useState(false);
   const [reviewDraft, setReviewDraft] = useState<EditableReviewDraft | null>(null);
   const [activeImportJobId, setActiveImportJobId] = useState<string | null>(null);
+  const [sharedImports, setSharedImports] = useState<PendingSharedImport[]>([]);
+  const [activeSharedImportId, setActiveSharedImportId] = useState<string | null>(null);
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -316,6 +321,50 @@ export default function App() {
   const groupedRecipeCount = (groupId: string) =>
     state.memberships.filter((membership) => membership.groupId === groupId).length;
 
+  const sortSharedImports = (items: PendingSharedImport[]) =>
+    [...items].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
+  const refreshSharedImports = useCallback(async () => {
+    try {
+      const records = await sharedImportStore.list();
+      setSharedImports(sortSharedImports(records));
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'We could not load shared imports.');
+    }
+  }, []);
+
+  const refreshAndProcessSharedImports = useCallback(async () => {
+    try {
+      const records = await sharedImportStore.list();
+      const processedRecords = await Promise.all(
+        records.map((record) =>
+          record.status === 'pending' || record.status === 'processing'
+            ? processPendingSharedImport({ ...record, status: 'processing' })
+            : record
+        )
+      );
+      const changedRecords = processedRecords.filter(
+        (record, index) => JSON.stringify(record) !== JSON.stringify(records[index])
+      );
+
+      for (const record of changedRecords) {
+        await sharedImportStore.replaceExisting(record);
+      }
+
+      await refreshSharedImports();
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'We could not process shared imports.');
+    }
+  }, [refreshSharedImports]);
+
+  useEffect(() => {
+    if (!signedIn || !hydrated || activeTab !== 'add' || reviewDraft) {
+      return;
+    }
+
+    void refreshAndProcessSharedImports();
+  }, [activeTab, hydrated, refreshAndProcessSharedImports, reviewDraft, signedIn]);
+
   const resetSignedInShellState = () => {
     previousRefreshTargetRef.current = null;
     skipNextAutoRefreshTargetRef.current = null;
@@ -334,6 +383,8 @@ export default function App() {
     setIsImportingPhoto(false);
     setReviewDraft(null);
     setActiveImportJobId(null);
+    setSharedImports([]);
+    setActiveSharedImportId(null);
     setEditingRecipeId(null);
     setSyncError(null);
     setRefreshError(null);
@@ -472,6 +523,7 @@ export default function App() {
 
       setUrlInput(trimmedUrl);
       setActiveImportJobId(jobId);
+      setActiveSharedImportId(null);
       setReviewDraft({ ...draft, selectedGroupIds: [] });
       await persistImportJob({
         id: jobId,
@@ -569,6 +621,7 @@ export default function App() {
       const existingJob = state.importJobs.find((job) => job.id === jobId);
 
       setActiveImportJobId(jobId);
+      setActiveSharedImportId(null);
       setReviewDraft({ ...draft, selectedGroupIds: [] });
       await persistImportJob({
         id: jobId,
@@ -670,6 +723,23 @@ export default function App() {
   };
 
   const persistActiveReviewDraft = async (draft: EditableReviewDraft) => {
+    if (activeSharedImportId) {
+      const existingShare = sharedImports.find((item) => item.id === activeSharedImportId);
+
+      if (existingShare) {
+        await sharedImportStore.save({
+          ...existingShare,
+          status: 'ready',
+          draft,
+          errorMessage: undefined,
+          updatedAt: new Date().toISOString(),
+        });
+        await refreshSharedImports();
+      }
+
+      return;
+    }
+
     if (!activeImportJobId || (draft.sourceType !== 'url' && draft.sourceType !== 'photo')) {
       return;
     }
@@ -706,7 +776,49 @@ export default function App() {
       return;
     }
 
+    if (nextTab === 'add' && !draftToPersist) {
+      void refreshAndProcessSharedImports();
+    }
+
     setActiveTab(nextTab);
+  };
+
+  const handleOpenSharedImport = (id: string) => {
+    const match = sharedImports.find((item) => item.id === id);
+
+    if (!match?.draft) {
+      setImportError('This shared import is not ready to review yet.');
+      return;
+    }
+
+    setImportError(null);
+    setActiveSharedImportId(id);
+    setActiveImportJobId(null);
+    setEditingRecipeId(null);
+    setReviewDraft({ ...match.draft, selectedGroupIds: readSelectedGroupIds(match.draft) });
+    setActiveTab('add');
+  };
+
+  const handleRetrySharedImport = async (id: string) => {
+    const match = sharedImports.find((item) => item.id === id);
+
+    if (!match) {
+      return;
+    }
+
+    const nextRecord = await processPendingSharedImport({
+      ...match,
+      status: 'pending',
+      errorMessage: undefined,
+    });
+
+    await sharedImportStore.save(nextRecord);
+    await refreshSharedImports();
+  };
+
+  const handleDismissSharedImport = async (id: string) => {
+    await sharedImportStore.remove(id);
+    await refreshSharedImports();
   };
 
   const handleSaveRecipe = async () => {
@@ -793,8 +905,18 @@ export default function App() {
       });
     }
 
+    if (activeSharedImportId) {
+      try {
+        await sharedImportStore.remove(activeSharedImportId);
+        await refreshSharedImports();
+      } catch {
+        // Queue cleanup should not strand the user after the recipe is already saved.
+      }
+    }
+
     setReviewDraft(null);
     setActiveImportJobId(null);
+    setActiveSharedImportId(null);
     setEditingRecipeId(null);
     setUrlInput('');
     setImportError(null);
@@ -825,6 +947,8 @@ export default function App() {
       selectedGroupIds,
     });
     setEditingRecipeId(recipe.id);
+    setActiveSharedImportId(null);
+    setActiveImportJobId(null);
     setSelectedRecipeId(null);
     setActiveTab('add');
   };
@@ -961,6 +1085,7 @@ export default function App() {
 
     setImportError(null);
     setActiveImportJobId(job.id);
+    setActiveSharedImportId(null);
     setEditingRecipeId(null);
     setReviewDraft({ ...job.draft, selectedGroupIds: job.draft.selectedGroupIds ?? [] });
     setActiveTab('add');
@@ -1152,6 +1277,12 @@ export default function App() {
             lastImportSourceType={lastImportSourceType}
             isImportingUrl={isImportingUrl}
             isImportingPhoto={isImportingPhoto}
+            sharedImportQueue={{
+              items: sharedImports,
+              onOpen: handleOpenSharedImport,
+              onRetry: (id) => void handleRetrySharedImport(id),
+              onDismiss: (id) => void handleDismissSharedImport(id),
+            }}
             importHistory={{
               history: importHistory,
               onRetryImport: handleRetryImportJob,
@@ -1180,6 +1311,7 @@ export default function App() {
                 skipNextAutoRefreshTargetRef.current = 'add';
                 setReviewDraft(null);
                 setActiveImportJobId(null);
+                setActiveSharedImportId(null);
                 setEditingRecipeId(null);
               })();
             }}
@@ -1187,6 +1319,7 @@ export default function App() {
               skipNextAutoRefreshTargetRef.current = 'add';
               setReviewDraft(null);
               setActiveImportJobId(null);
+              setActiveSharedImportId(null);
               setEditingRecipeId(null);
             }}
             onSaveRecipe={() => void handleSaveRecipe()}
@@ -1300,6 +1433,14 @@ function findSavedRecipeId(
         recipe.sourceUrl === draft.sourceUrl
     )?.id
   );
+}
+
+function readSelectedGroupIds(draft: RecipeDraft) {
+  if ('selectedGroupIds' in draft && Array.isArray(draft.selectedGroupIds)) {
+    return draft.selectedGroupIds;
+  }
+
+  return [];
 }
 
 async function readStoredPhotoAssets(sourcePhotoUris: string[]): Promise<StoredPhotoAsset[]> {

@@ -111,6 +111,32 @@ describe('AddRecipeScreen', () => {
     expect(history).toBeTruthy();
   });
 
+  it('renders shared imports above import history on the landing view', () => {
+    renderAddRecipeScreen({
+      sharedImportQueue: {
+        items: [
+          {
+            id: 'share-ready',
+            status: 'ready',
+            sourceKind: 'url',
+            sourceLabel: 'example.com',
+            payload: { url: 'https://example.com/cacio-e-pepe' },
+            draft: reviewDraft,
+            createdAt: '2026-04-05T10:00:00.000Z',
+            updatedAt: '2026-04-05T10:00:00.000Z',
+          },
+        ],
+        onOpen: jest.fn(),
+        onRetry: jest.fn(),
+        onDismiss: jest.fn(),
+      },
+      importHistory,
+    });
+
+    expect(screen.getByText('Shared imports')).toBeTruthy();
+    expect(screen.getByText('Import history')).toBeTruthy();
+  });
+
   it('hides import history while reviewing a draft', () => {
     renderAddRecipeScreen({
       reviewDraft,
