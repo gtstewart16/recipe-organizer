@@ -559,7 +559,7 @@ function mapImportJobForUpsert(householdId: string, job: ImportJob) {
     title: job.title,
     status: job.status,
     error_message: job.errorMessage ?? null,
-    draft: job.draft ?? null,
+    draft: job.draft ?? {},
     recipe_id: job.recipeId ?? null,
     created_at: job.createdAt,
     updated_at: job.updatedAt,

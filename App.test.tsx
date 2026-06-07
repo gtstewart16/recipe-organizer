@@ -841,6 +841,48 @@ describe('Recipe Organizer app', () => {
     expect(await screen.findByText('Cacio E Pepe')).toBeTruthy();
   });
 
+  it('marks a confirmed import as saved in history without a draft update error', async () => {
+    mockRepository.upsertImportJob.mockImplementation(async (job) => {
+      if (job.status === 'saved' && !job.draft) {
+        throw new Error('null value in column "draft" violates not-null constraint');
+      }
+
+      return {
+        ...(job.status === 'saved' ? importedCloudState : mockCloudState),
+        importJobs: [job],
+      };
+    });
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+    fireEvent.changeText(
+      screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
+      'https://example.com/cacio-e-pepe'
+    );
+    fireEvent.press(screen.getByText('Create review draft'));
+
+    expect(await screen.findByText('Review import')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Weeknight'));
+    fireEvent.press(screen.getByText('Confirm recipe'));
+
+    expect(await screen.findByPlaceholderText('Rename group')).toBeTruthy();
+    expect(screen.queryByText('We could not update that import draft right now.')).toBeNull();
+    await waitFor(() => {
+      expect(mockRepository.upsertImportJob).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          status: 'saved',
+          recipeId: 'recipe-2',
+          draft: expect.objectContaining({
+            title: 'Cacio E Pepe',
+            selectedGroupIds: ['group-weeknight'],
+          }),
+        })
+      );
+    });
+  });
+
   it('deletes a recipe from the recipe detail view', async () => {
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
 

@@ -783,6 +783,10 @@ export default function App() {
         sourcePhotoUris: normalizedDraft.sourcePhotoUris,
         title: normalizedDraft.title,
         status: 'saved',
+        draft: {
+          ...normalizedDraft,
+          selectedGroupIds: reviewDraft.selectedGroupIds,
+        },
         recipeId: savedRecipeId,
         createdAt: existingJob?.createdAt ?? timestamp,
         updatedAt: timestamp,
