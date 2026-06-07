@@ -5,10 +5,6 @@ export type SharedImportStatus = 'pending' | 'processing' | 'ready' | 'failed' |
 
 export type SharedImportPayload = { url: string } | { text: string };
 
-export type SharedImportReviewDraft = Omit<RecipeDraft, 'sourceType'> & {
-  sourceType: 'shared_text';
-};
-
 export type PendingSharedImport = {
   id: string;
   status: SharedImportStatus;
@@ -18,7 +14,7 @@ export type PendingSharedImport = {
   createdAt: string;
   updatedAt: string;
   errorMessage?: string;
-  draft?: SharedImportReviewDraft;
+  draft?: RecipeDraft;
 };
 
 export function createPendingSharedImport(input: {
@@ -45,7 +41,7 @@ export function createPendingSharedImport(input: {
 
 export function markSharedImportReady(
   record: PendingSharedImport,
-  draft: SharedImportReviewDraft,
+  draft: RecipeDraft,
   updatedAt = new Date().toISOString()
 ): PendingSharedImport {
   return {

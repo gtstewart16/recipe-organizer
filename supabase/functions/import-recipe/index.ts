@@ -1,5 +1,5 @@
 type ImportRecipeRequest = {
-  sourceType: 'url' | 'photo';
+  sourceType: 'url' | 'photo' | 'shared_text';
   sourceUrl?: string;
   sourcePhotoUris?: string[];
   imageDataUrls?: string[];
@@ -11,7 +11,7 @@ type ImportRecipeResponse = {
   isRecipe: boolean;
   title: string;
   description?: string;
-  sourceType: 'url' | 'photo';
+  sourceType: 'url' | 'photo' | 'shared_text';
   sourceUrl?: string;
   sourcePhotoUris: string[];
   ingredients: string[];
@@ -106,11 +106,16 @@ function deriveTitleFromUrl(sourceUrl: string) {
 }
 
 function buildFallbackResponse(request: ImportRecipeRequest): ImportRecipeResponse {
-  if (request.sourceType === 'url') {
+  if (request.sourceType === 'url' || request.sourceType === 'shared_text') {
+    const title =
+      request.sourceType === 'shared_text'
+        ? request.rawText?.split('\n').map((line) => line.trim()).find(Boolean)?.slice(0, 60) ?? 'Shared Recipe Draft'
+        : deriveTitleFromUrl(request.sourceUrl ?? '');
+
     return {
       isRecipe: true,
-      title: deriveTitleFromUrl(request.sourceUrl ?? ''),
-      sourceType: 'url',
+      title,
+      sourceType: request.sourceType,
       sourceUrl: request.sourceUrl,
       sourcePhotoUris: [],
       ingredients: [
@@ -190,7 +195,7 @@ async function normalizeRecipeWithOpenAI(request: ImportRecipeRequest): Promise<
           request.rawText ?? '',
         ].join('\n');
 
-  if (request.sourceType === 'url' && !request.rawText?.trim()) {
+  if ((request.sourceType === 'url' || request.sourceType === 'shared_text') && !request.rawText?.trim()) {
     return null;
   }
 

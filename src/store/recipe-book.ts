@@ -1,4 +1,4 @@
-export type RecipeSourceType = 'url' | 'photo' | 'manual';
+export type RecipeSourceType = 'url' | 'photo' | 'manual' | 'shared_text';
 export type RecipeStatus = 'needs_review' | 'ready' | 'failed';
 export type ImportJobStatus = 'failed' | 'in_review' | 'saved';
 
@@ -132,6 +132,26 @@ export function createRecipeBookDraftFromPhoto(sourcePhotoUris: string[]): Recip
     heroImageUri: sourcePhotoUris[0],
     sourceType: 'photo',
     sourcePhotoUris,
+    ingredients: DEFAULT_INGREDIENTS,
+    instructions: DEFAULT_INSTRUCTIONS,
+    prepTime: undefined,
+    cookTime: undefined,
+    status: 'needs_review',
+  };
+}
+
+export function createRecipeBookDraftFromSharedText(sharedText: string): RecipeDraft {
+  const title =
+    sharedText
+      .split('\n')
+      .map((line) => line.trim())
+      .find(Boolean)
+      ?.slice(0, 60) || 'Shared Recipe Draft';
+
+  return {
+    title,
+    sourceType: 'shared_text',
+    sourcePhotoUris: [],
     ingredients: DEFAULT_INGREDIENTS,
     instructions: DEFAULT_INSTRUCTIONS,
     prepTime: undefined,
