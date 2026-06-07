@@ -113,7 +113,7 @@ function isRetryable(job: ImportJob) {
     return Boolean(job.sourceUrl?.trim());
   }
 
-  return false;
+  return job.sourcePhotoUris.length > 0;
 }
 
 function formatSourceHint(job: ImportJob) {

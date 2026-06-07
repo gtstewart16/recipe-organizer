@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
-import { ImportJob, RecipeBookState, RecipeDraft, RecipeRecord } from '../store/recipe-book';
+import { ImportJob, ImportJobDraft, RecipeBookState, RecipeDraft, RecipeRecord } from '../store/recipe-book';
 
 const DEFAULT_HOUSEHOLD_NAME = 'The Kitchen';
 const DEFAULT_GROUP_NAMES = ['Weeknight', 'Weekend', 'Healthy'];
@@ -47,7 +47,7 @@ type ImportJobRow = {
   title: string;
   status: ImportJob['status'];
   errorMessage?: string;
-  draft?: RecipeDraft;
+  draft?: ImportJobDraft;
   recipeId?: string;
   createdAt: string;
   updatedAt: string;
@@ -470,7 +470,7 @@ function mapImportJobRow(row: Record<string, unknown>): ImportJobRow {
     title: row.title as string,
     status: row.status as ImportJob['status'],
     errorMessage: (row.error_message as string | null) ?? undefined,
-    draft: (row.draft as RecipeDraft | null) ?? undefined,
+    draft: (row.draft as ImportJobDraft | null) ?? undefined,
     recipeId: (row.recipe_id as string | null) ?? undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,

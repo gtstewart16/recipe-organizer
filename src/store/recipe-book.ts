@@ -17,6 +17,10 @@ export type RecipeDraft = {
   status: RecipeStatus;
 };
 
+export type ImportJobDraft = RecipeDraft & {
+  selectedGroupIds?: string[];
+};
+
 export type RecipeRecord = RecipeDraft & {
   id: string;
   createdAt: string;
@@ -31,7 +35,7 @@ export type ImportJob = {
   title: string;
   status: ImportJobStatus;
   errorMessage?: string;
-  draft?: RecipeDraft;
+  draft?: ImportJobDraft;
   recipeId?: string;
   createdAt: string;
   updatedAt: string;

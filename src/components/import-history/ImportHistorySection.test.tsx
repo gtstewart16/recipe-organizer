@@ -18,7 +18,7 @@ const failedRetryableJob: ImportJob = {
 const failedNonRetryableJob: ImportJob = {
   id: 'job-failed-photo',
   sourceType: 'photo',
-  sourcePhotoUris: ['file:///missing-cookbook-page.jpg'],
+  sourcePhotoUris: [],
   title: 'Cookbook Recipe Draft',
   status: 'failed',
   errorMessage: 'The original photo is no longer available.',

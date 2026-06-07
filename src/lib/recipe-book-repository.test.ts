@@ -1,4 +1,10 @@
-import { createRecipeBookDraftFromUrl, ImportJob, RecipeBookState, RecipeDraft } from '../store/recipe-book';
+import {
+  createRecipeBookDraftFromUrl,
+  ImportJob,
+  ImportJobDraft,
+  RecipeBookState,
+  RecipeDraft,
+} from '../store/recipe-book';
 import { createRecipeBookRepository, RecipeBookPersistence } from './recipe-book-repository';
 
 describe('recipe book repository', () => {
@@ -272,7 +278,7 @@ function createInMemoryPersistence(options?: { seedGroups?: string[] }): RecipeB
       title: string;
       status: 'failed' | 'in_review' | 'saved';
       errorMessage?: string;
-      draft?: RecipeDraft;
+      draft?: ImportJobDraft;
       recipeId?: string;
       createdAt: string;
       updatedAt: string;
@@ -317,7 +323,7 @@ function createInMemoryPersistence(options?: { seedGroups?: string[] }): RecipeB
     title: string;
     status: 'failed' | 'in_review' | 'saved';
     errorMessage?: string;
-    draft?: RecipeDraft;
+    draft?: ImportJobDraft;
     recipeId?: string;
     createdAt: string;
     updatedAt: string;
@@ -517,7 +523,7 @@ function createInMemoryPersistence(options?: { seedGroups?: string[] }): RecipeB
         title: string;
         status: 'failed' | 'in_review' | 'saved';
         errorMessage?: string;
-        draft?: RecipeDraft;
+        draft?: ImportJobDraft;
         recipeId?: string;
         createdAt: string;
         updatedAt: string;

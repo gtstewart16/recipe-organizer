@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
@@ -52,6 +53,12 @@ const HOUSEHOLD_PASSWORD = 'password123';
 const initialSeedState = seedRecipeBookState();
 
 type TabId = 'recipes' | 'groups' | 'add';
+
+type StoredPhotoAsset = {
+  uri: string;
+  mimeType?: string;
+  base64?: string | null;
+};
 
 export default function App() {
   const isTestEnv = process.env.NODE_ENV === 'test';
@@ -461,6 +468,7 @@ export default function App() {
       const draft = await importRecipeFromUrl(trimmedUrl);
       const jobId = existingJobId ?? createImportJobId();
       const timestamp = new Date().toISOString();
+      const existingJob = state.importJobs.find((job) => job.id === jobId);
 
       setUrlInput(trimmedUrl);
       setActiveImportJobId(jobId);
@@ -473,7 +481,7 @@ export default function App() {
         title: draft.title.trim() || createRecipeBookDraftFromUrl(trimmedUrl).title,
         status: 'in_review',
         draft,
-        createdAt: timestamp,
+        createdAt: existingJob?.createdAt ?? timestamp,
         updatedAt: timestamp,
       });
     } catch (error) {
@@ -482,6 +490,7 @@ export default function App() {
           ? error.message
           : 'We could not parse that recipe link. Try another page or use manual edits after import.';
       const jobId = existingJobId ?? createImportJobId();
+      const existingJob = state.importJobs.find((job) => job.id === jobId);
 
       setImportError(
         message
@@ -497,7 +506,7 @@ export default function App() {
         title: fallbackDraft.title,
         status: 'failed',
         errorMessage: message,
-        createdAt: timestamp,
+        createdAt: existingJob?.createdAt ?? timestamp,
         updatedAt: timestamp,
       });
     } finally {
@@ -557,6 +566,7 @@ export default function App() {
       );
       const jobId = existingJobId ?? createImportJobId();
       const timestamp = new Date().toISOString();
+      const existingJob = state.importJobs.find((job) => job.id === jobId);
 
       setActiveImportJobId(jobId);
       setReviewDraft({ ...draft, selectedGroupIds: [] });
@@ -567,7 +577,7 @@ export default function App() {
         title: draft.title.trim() || 'Cookbook Recipe Draft',
         status: 'in_review',
         draft,
-        createdAt: timestamp,
+        createdAt: existingJob?.createdAt ?? timestamp,
         updatedAt: timestamp,
       });
     } catch (error) {
@@ -581,19 +591,122 @@ export default function App() {
       );
       setActiveImportJobId(null);
       const timestamp = new Date().toISOString();
+      const jobId = existingJobId ?? createImportJobId();
+      const existingJob = state.importJobs.find((job) => job.id === jobId);
       await persistImportJob({
-        id: existingJobId ?? createImportJobId(),
+        id: jobId,
         sourceType: 'photo',
         sourcePhotoUris: result.assets.map((asset) => asset.uri),
         title: 'Cookbook Recipe Draft',
         status: 'failed',
         errorMessage: message,
-        createdAt: timestamp,
+        createdAt: existingJob?.createdAt ?? timestamp,
         updatedAt: timestamp,
       });
     } finally {
       setIsImportingPhoto(false);
     }
+  };
+
+  const retryPhotoImportJob = async (job: ImportJob) => {
+    if (job.sourcePhotoUris.length === 0) {
+      Alert.alert('Cannot retry import', 'This saved import no longer has its original cookbook photo.');
+      return;
+    }
+
+    setLastImportSourceType('photo');
+    setImportError(null);
+    setIsImportingPhoto(true);
+
+    try {
+      const storedAssets = await readStoredPhotoAssets(job.sourcePhotoUris);
+
+      if (storedAssets.length === 0) {
+        Alert.alert('Cannot retry import', 'This saved import no longer has a readable cookbook photo.');
+        return;
+      }
+
+      const draft = await importRecipeFromPhoto(storedAssets);
+      const timestamp = new Date().toISOString();
+      const sourcePhotoUris = draft.sourcePhotoUris.length > 0 ? draft.sourcePhotoUris : job.sourcePhotoUris;
+      const reviewImportDraft = {
+        ...draft,
+        sourcePhotoUris,
+        selectedGroupIds: job.draft?.selectedGroupIds ?? [],
+      };
+
+      setActiveImportJobId(job.id);
+      setEditingRecipeId(null);
+      setReviewDraft(reviewImportDraft);
+      setActiveTab('add');
+      await persistImportJob({
+        id: job.id,
+        sourceType: 'photo',
+        sourcePhotoUris,
+        title: draft.title.trim() || job.title || 'Cookbook Recipe Draft',
+        status: 'in_review',
+        draft: reviewImportDraft,
+        createdAt: job.createdAt,
+        updatedAt: timestamp,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'We could not parse that cookbook photo. Try another image or review the draft manually.';
+      const timestamp = new Date().toISOString();
+
+      setImportError(message);
+      setActiveImportJobId(null);
+      await persistImportJob({
+        ...job,
+        status: 'failed',
+        errorMessage: message,
+        updatedAt: timestamp,
+      });
+    } finally {
+      setIsImportingPhoto(false);
+    }
+  };
+
+  const persistActiveReviewDraft = async (draft: EditableReviewDraft) => {
+    if (!activeImportJobId || (draft.sourceType !== 'url' && draft.sourceType !== 'photo')) {
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+    const existingJob = state.importJobs.find((job) => job.id === activeImportJobId);
+
+    await persistImportJob({
+      id: activeImportJobId,
+      sourceType: draft.sourceType,
+      sourceUrl: draft.sourceUrl?.trim(),
+      sourcePhotoUris: draft.sourcePhotoUris,
+      title: draft.title.trim() || existingJob?.title || 'Imported Recipe',
+      status: 'in_review',
+      draft,
+      createdAt: existingJob?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+    });
+  };
+
+  const handleTabPress = (nextTab: TabId) => {
+    if (activeTab === nextTab) {
+      return;
+    }
+
+    const draftToPersist = reviewDraft;
+
+    if (activeTab === 'add' && draftToPersist) {
+      void (async () => {
+        await persistActiveReviewDraft(draftToPersist);
+        skipNextAutoRefreshTargetRef.current = nextTab;
+        setActiveTab(nextTab);
+      })();
+      return;
+    }
+
+    setActiveTab(nextTab);
   };
 
   const handleSaveRecipe = async () => {
@@ -833,7 +946,7 @@ export default function App() {
       return;
     }
 
-    Alert.alert('Cannot retry import', 'Photo imports need to be captured again from the camera or photo library.');
+    void retryPhotoImportJob(job);
   };
 
   const handleResumeImportJob = (job: ImportJob) => {
@@ -845,7 +958,7 @@ export default function App() {
     setImportError(null);
     setActiveImportJobId(job.id);
     setEditingRecipeId(null);
-    setReviewDraft({ ...job.draft, selectedGroupIds: [] });
+    setReviewDraft({ ...job.draft, selectedGroupIds: job.draft.selectedGroupIds ?? [] });
     setActiveTab('add');
   };
 
@@ -958,9 +1071,9 @@ export default function App() {
         <HeaderBar onOpenSettings={() => setIsSettingsOpen(true)} />
 
         <View style={styles.tabBar}>
-          <TabButton label="Recipes" active={activeTab === 'recipes'} onPress={() => setActiveTab('recipes')} />
-          <TabButton label="Groups" active={activeTab === 'groups'} onPress={() => setActiveTab('groups')} />
-          <TabButton label="Add" active={activeTab === 'add'} onPress={() => setActiveTab('add')} />
+          <TabButton label="Recipes" active={activeTab === 'recipes'} onPress={() => handleTabPress('recipes')} />
+          <TabButton label="Groups" active={activeTab === 'groups'} onPress={() => handleTabPress('groups')} />
+          <TabButton label="Add" active={activeTab === 'add'} onPress={() => handleTabPress('add')} />
         </View>
 
         {activeTab === 'recipes' ? (
@@ -1053,10 +1166,18 @@ export default function App() {
             onDismissImportError={() => setImportError(null)}
             onReviewDraftChange={setReviewDraft}
             onBackToImport={() => {
-              skipNextAutoRefreshTargetRef.current = 'add';
-              setReviewDraft(null);
-              setActiveImportJobId(null);
-              setEditingRecipeId(null);
+              const draftToPersist = reviewDraft;
+
+              void (async () => {
+                if (draftToPersist) {
+                  await persistActiveReviewDraft(draftToPersist);
+                }
+
+                skipNextAutoRefreshTargetRef.current = 'add';
+                setReviewDraft(null);
+                setActiveImportJobId(null);
+                setEditingRecipeId(null);
+              })();
             }}
             onDiscardDraft={() => {
               skipNextAutoRefreshTargetRef.current = 'add';
@@ -1175,6 +1296,38 @@ function findSavedRecipeId(
         recipe.sourceUrl === draft.sourceUrl
     )?.id
   );
+}
+
+async function readStoredPhotoAssets(sourcePhotoUris: string[]): Promise<StoredPhotoAsset[]> {
+  const assets = await Promise.all(
+    sourcePhotoUris.map(async (uri): Promise<StoredPhotoAsset | null> => {
+      try {
+        return {
+          uri,
+          mimeType: inferImageMimeType(uri),
+          base64: await FileSystem.readAsStringAsync(uri, { encoding: 'base64' }),
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return assets.filter((asset): asset is StoredPhotoAsset => Boolean(asset));
+}
+
+function inferImageMimeType(uri: string) {
+  const normalizedUri = uri.toLowerCase();
+
+  if (normalizedUri.endsWith('.png')) {
+    return 'image/png';
+  }
+
+  if (normalizedUri.endsWith('.webp')) {
+    return 'image/webp';
+  }
+
+  return 'image/jpeg';
 }
 
 function formatLastSynced(value: string | null) {

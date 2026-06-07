@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import * as FileSystem from 'expo-file-system';
 import { Alert, AppState, type AppStateStatus } from 'react-native';
 
 import type { ImportJob, RecipeBookState } from './src/store/recipe-book';
@@ -100,6 +101,17 @@ const savedImportJob: ImportJob = {
   updatedAt: '2026-04-05T10:02:00.000Z',
 };
 
+const failedPhotoImportJob: ImportJob = {
+  id: 'job-failed-photo',
+  sourceType: 'photo',
+  sourcePhotoUris: ['file:///cookbook-page.jpg'],
+  title: 'Cookbook Recipe Draft',
+  status: 'failed',
+  errorMessage: 'The photo could not be parsed.',
+  createdAt: '2026-04-05T10:03:00.000Z',
+  updatedAt: '2026-04-05T10:03:00.000Z',
+};
+
 const mockRepository = {
   loadState: jest.fn(async () => mockCloudState),
   createGroup: jest.fn(async () => mockCloudState),
@@ -145,6 +157,10 @@ jest.mock('expo-image-picker', () => ({
       },
     ],
   })),
+}));
+
+jest.mock('expo-file-system', () => ({
+  readAsStringAsync: jest.fn(async () => 'ZmFrZS1yZXRyeS1pbWFnZQ=='),
 }));
 
 jest.mock('./src/lib/supabase', () => ({
@@ -203,8 +219,9 @@ const mockPersistAuthSession = jest.mocked(persistAuthSession);
 const mockClearAuthSession = jest.mocked(clearAuthSession);
 
 async function renderAppToSignInGate() {
-  render(<App />);
+  const rendered = render(<App />);
   expect(await screen.findByText('Your household recipe library')).toBeTruthy();
+  return rendered;
 }
 
 async function pressPrimaryTab(label: 'Recipes' | 'Groups' | 'Add') {
@@ -217,6 +234,13 @@ async function pressPrimaryTab(label: 'Recipes' | 'Groups' | 'Add') {
 
   await waitFor(() => {
     expect(mockRepository.loadState.mock.calls.length).toBeGreaterThan(initialLoadCount);
+  });
+}
+
+async function pressPrimaryTabWithoutRefreshWait(label: 'Recipes' | 'Groups' | 'Add') {
+  await act(async () => {
+    fireEvent.press(screen.getAllByText(label)[0]);
+    await Promise.resolve();
   });
 }
 
@@ -433,7 +457,7 @@ describe('Recipe Organizer app', () => {
 
     fireEvent.press(screen.getByText('Back to import'));
 
-    expect(screen.getByText('From link')).toBeTruthy();
+    expect(await screen.findByText('From link')).toBeTruthy();
     expect(screen.getByDisplayValue('https://example.com/cacio-e-pepe')).toBeTruthy();
   });
 
@@ -672,6 +696,81 @@ describe('Recipe Organizer app', () => {
         })
       );
     });
+  });
+
+  it('retries a failed photo import from import history using the saved photo URI', async () => {
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    mockRepository.loadState.mockResolvedValueOnce({
+      ...mockCloudState,
+      importJobs: [failedPhotoImportJob],
+    });
+
+    await pressPrimaryTab('Add');
+    expect(await screen.findByText('Needs attention')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Retry'));
+
+    expect(await screen.findByText('Review import')).toBeTruthy();
+    expect(screen.getByDisplayValue('Pesto Chicken and Roasted Veggie Farro Bowls')).toBeTruthy();
+    expect(FileSystem.readAsStringAsync).toHaveBeenCalledWith('file:///cookbook-page.jpg', {
+      encoding: 'base64',
+    });
+    await waitFor(() => {
+      expect(mockRepository.upsertImportJob).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'job-failed-photo',
+          status: 'in_review',
+          sourcePhotoUris: ['file:///cookbook-page.jpg'],
+        })
+      );
+    });
+  });
+
+  it('persists edited review draft details before resuming from import history after tab navigation', async () => {
+    const rendered = await renderAppToSignInGate();
+    await signInToLibrary();
+
+    await pressPrimaryTab('Add');
+    fireEvent.changeText(
+      screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
+      'https://example.com/cacio-e-pepe'
+    );
+    fireEvent.press(screen.getByText('Create review draft'));
+
+    expect(await screen.findByText('Review import')).toBeTruthy();
+    fireEvent.changeText(screen.getByDisplayValue('Cacio E Pepe'), 'Edited Cacio E Pepe');
+    fireEvent.press(screen.getByText('Weeknight'));
+    await pressPrimaryTabWithoutRefreshWait('Groups');
+    expect(await screen.findByTestId('groups-scroll-view')).toBeTruthy();
+
+    await waitFor(() => {
+      expect(mockRepository.upsertImportJob).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          status: 'in_review',
+          draft: expect.objectContaining({
+            title: 'Edited Cacio E Pepe',
+            selectedGroupIds: ['group-weeknight'],
+          }),
+        })
+      );
+    });
+
+    const persistedJob = mockRepository.upsertImportJob.mock.calls.at(-1)?.[0] as ImportJob;
+    rendered.unmount();
+    mockLoadAuthSession.mockResolvedValue(true);
+    mockRepository.loadState.mockResolvedValue({
+      ...mockCloudState,
+      importJobs: [persistedJob],
+    });
+
+    render(<App />);
+    expect(await screen.findByTestId('recipes-scroll-view')).toBeTruthy();
+    await pressPrimaryTab('Add');
+    fireEvent.press(await screen.findByText('Resume review'));
+
+    expect(screen.getByDisplayValue('Edited Cacio E Pepe')).toBeTruthy();
   });
 
   it('resumes an in-review import from import history', async () => {
