@@ -4,6 +4,7 @@ import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 import { InteractivePressable } from '../InteractivePressable';
 import { colors, radius, shadows, spacing, type } from '../../theme';
+import { formatRecipeDuration } from '../../lib/duration';
 import { RecipeDirectionsSection } from './RecipeDirectionsSection';
 import { RecipeIngredientsSection } from './RecipeIngredientsSection';
 
@@ -41,8 +42,8 @@ export function RecipeDetailScreen({
   const closeOffsetTop = safeTopInset + 14;
   const metadataItems = [
     { label: 'Servings', value: recipe.servings ?? '—' },
-    { label: 'Prep', value: recipe.prepTime ?? '—' },
-    { label: 'Cook', value: recipe.cookTime ?? '—' },
+    { label: 'Prep', value: formatRecipeDuration(recipe.prepTime) ?? '—' },
+    { label: 'Cook', value: formatRecipeDuration(recipe.cookTime) ?? '—' },
   ];
 
   return (

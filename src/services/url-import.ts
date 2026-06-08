@@ -1,5 +1,6 @@
 import { createRecipeBookDraftFromUrl, RecipeDraft } from '../store/recipe-book';
 import { env, hasRemoteImportFunction } from '../lib/env';
+import { formatRecipeDuration } from '../lib/duration';
 
 type Fetcher = typeof fetch;
 
@@ -69,8 +70,8 @@ export async function importRecipeFromUrl(
         ingredients: normalized.ingredients,
         instructions: normalized.instructions,
         servings: normalized.servings,
-        prepTime: normalized.prepTime,
-        cookTime: normalized.cookTime,
+        prepTime: formatRecipeDuration(normalized.prepTime),
+        cookTime: formatRecipeDuration(normalized.cookTime),
       };
     }
   }
@@ -294,35 +295,7 @@ function getDurationLabel(value: unknown): string | undefined {
     return undefined;
   }
 
-  return formatIsoDuration(raw) ?? raw;
-}
-
-function formatIsoDuration(value: string): string | undefined {
-  const match = value.match(/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?$/i);
-
-  if (!match) {
-    return undefined;
-  }
-
-  const [, daysRaw, hoursRaw, minutesRaw] = match;
-  const days = daysRaw ? Number(daysRaw) : 0;
-  const hours = hoursRaw ? Number(hoursRaw) : 0;
-  const minutes = minutesRaw ? Number(minutesRaw) : 0;
-  const parts: string[] = [];
-
-  if (days > 0) {
-    parts.push(`${days} day${days === 1 ? '' : 's'}`);
-  }
-
-  if (hours > 0) {
-    parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
-  }
-
-  if (minutes > 0) {
-    parts.push(`${minutes} min${minutes === 1 ? '' : 's'}`);
-  }
-
-  return parts.length > 0 ? parts.join(' ') : undefined;
+  return formatRecipeDuration(raw);
 }
 
 function getInstructions(value: unknown): string[] {

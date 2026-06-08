@@ -29,6 +29,7 @@ import { createSharedImportFromDeepLink } from './src/features/shared-imports/de
 import { processPendingSharedImport } from './src/features/shared-imports/processor';
 import { sharedImportStore } from './src/features/shared-imports/store';
 import type { PendingSharedImport } from './src/features/shared-imports/types';
+import { formatRecipeDuration } from './src/lib/duration';
 import type { ImportFeedbackSourceType } from './src/lib/import-feedback';
 import { createRecipeBookRepository, createSupabaseRecipeBookPersistence } from './src/lib/recipe-book-repository';
 import { parseMultilineList } from './src/lib/recipe-text';
@@ -893,8 +894,8 @@ export default function App() {
       ingredients: parseMultilineList(reviewDraft.ingredients.join('\n')),
       instructions: parseMultilineList(reviewDraft.instructions.join('\n')),
       servings: reviewDraft.servings?.trim(),
-      prepTime: reviewDraft.prepTime?.trim(),
-      cookTime: reviewDraft.cookTime?.trim(),
+      prepTime: formatRecipeDuration(reviewDraft.prepTime),
+      cookTime: formatRecipeDuration(reviewDraft.cookTime),
       status: 'ready' as const,
     };
 
@@ -958,6 +959,26 @@ export default function App() {
         },
         recipeId: savedRecipeId,
         createdAt: existingJob?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      });
+    }
+
+    if (activeSharedImportId && (reviewDraft.sourceType === 'url' || reviewDraft.sourceType === 'photo')) {
+      const timestamp = new Date().toISOString();
+
+      await persistImportJob({
+        id: activeSharedImportId,
+        sourceType: reviewDraft.sourceType,
+        sourceUrl: normalizedDraft.sourceUrl,
+        sourcePhotoUris: normalizedDraft.sourcePhotoUris,
+        title: normalizedDraft.title,
+        status: 'saved',
+        draft: {
+          ...normalizedDraft,
+          selectedGroupIds: reviewDraft.selectedGroupIds,
+        },
+        recipeId: savedRecipeId,
+        createdAt: timestamp,
         updatedAt: timestamp,
       });
     }

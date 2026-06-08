@@ -23,8 +23,8 @@ describe('importRecipeFromPhoto', () => {
         'Serve the farro with pesto, roasted vegetables, and sliced chicken.',
       ],
       servings: '4',
-      prepTime: '20 mins',
-      cookTime: '35 mins',
+      prepTime: 'PT20M',
+      cookTime: 'PT35M',
     }));
 
     const draft = await importRecipeFromPhoto(

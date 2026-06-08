@@ -980,6 +980,34 @@ describe('Recipe Organizer app', () => {
     });
   });
 
+  it('marks a confirmed shared URL import as saved in import history', async () => {
+    seedSharedImportStorage([readySharedImport]);
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+    fireEvent.press(await screen.findByText('Review draft'));
+    fireEvent.press(screen.getByText('Weeknight'));
+    fireEvent.press(screen.getByText('Confirm recipe'));
+
+    expect(await screen.findByPlaceholderText('Rename group')).toBeTruthy();
+    await waitFor(() => {
+      expect(mockRepository.upsertImportJob).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          id: 'share-ready-url',
+          sourceType: 'url',
+          sourceUrl: 'https://www.skinnytaste.com/mushroom-risotto',
+          status: 'saved',
+          recipeId: 'recipe-2',
+          draft: expect.objectContaining({
+            title: 'Mushroom Risotto',
+            selectedGroupIds: ['group-weeknight'],
+          }),
+        })
+      );
+    });
+  });
+
   it('preserves shared import group selections when returning to the queue', async () => {
     const storage = seedSharedImportStorage([readySharedImport]);
 

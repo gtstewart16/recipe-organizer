@@ -74,6 +74,22 @@ describe('importRecipeFromUrl', () => {
     expect(draft.ingredients.length).toBeGreaterThan(0);
   });
 
+  it('formats ISO durations returned by the remote normalizer', async () => {
+    const draft = await importRecipeFromUrl('https://example.com/remote-recipe', {
+      fetcher: async () => new Response('<html><body>recipe text</body></html>', { status: 200 }),
+      normalizer: async () => ({
+        title: 'Remote Recipe',
+        ingredients: ['1 squash'],
+        instructions: ['Roast it.'],
+        prepTime: 'PT15M',
+        cookTime: 'PT1H5M',
+      }),
+    });
+
+    expect(draft.prepTime).toBe('15 mins');
+    expect(draft.cookTime).toBe('1 hour 5 mins');
+  });
+
   it('extracts an Instagram reel caption into a reviewable recipe draft', async () => {
     const draft = await importRecipeFromUrl('https://www.instagram.com/reel/DLBKdccunV7/', {
       fetcher: async () =>

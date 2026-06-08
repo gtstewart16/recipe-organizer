@@ -11,6 +11,8 @@ describe('importRecipeFromSharedText', () => {
           ingredients: ['2 salmon fillets'],
           instructions: ['Roast and serve.'],
           servings: '2',
+          prepTime: 'PT10M',
+          cookTime: 'PT25M',
         }),
       }
     );
@@ -20,6 +22,8 @@ describe('importRecipeFromSharedText', () => {
     expect(draft.ingredients).toEqual(['2 salmon fillets']);
     expect(draft.instructions).toEqual(['Roast and serve.']);
     expect(draft.servings).toBe('2');
+    expect(draft.prepTime).toBe('10 mins');
+    expect(draft.cookTime).toBe('25 mins');
   });
 
   it('throws a friendly error when the normalizer says the text is not a recipe', async () => {
