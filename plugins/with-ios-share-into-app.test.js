@@ -29,6 +29,10 @@ describe('with-ios-share-into-app', () => {
     expect(plist).toContain('NSExtensionActivationSupportsWebURLWithMaxCount');
     expect(plist).toContain('NSExtensionActivationSupportsText');
     expect(plist).toContain('com.apple.share-services');
+    expect(plist).toContain('CFBundleIdentifier');
+    expect(plist).toContain('$(PRODUCT_BUNDLE_IDENTIFIER)');
+    expect(plist).toContain('CFBundleExecutable');
+    expect(plist).toContain('$(EXECUTABLE_NAME)');
   });
 
   it('adds the Swift file through the target sources phase without requiring a Plugins group', () => {
@@ -61,5 +65,36 @@ describe('with-ios-share-into-app', () => {
       comment: 'Sources',
       target: 'SHARE_TARGET',
     });
+  });
+
+  it('updates an existing share extension target with bundle and version settings', () => {
+    const configurations = {
+      debug: {
+        buildSettings: {
+          PRODUCT_NAME: `"${SHARE_EXTENSION_NAME}"`,
+        },
+      },
+    };
+    const project = {
+      pbxNativeTargetSection: () => ({
+        existingTarget: {
+          name: `"${SHARE_EXTENSION_NAME}"`,
+        },
+      }),
+      addTarget: jest.fn(),
+      addBuildPhase: jest.fn(),
+      pbxXCBuildConfigurationSection: () => configurations,
+    };
+
+    addShareExtensionTarget(project, {
+      extensionBundleIdentifier: 'com.gtstewart16.recipeorganizer.share',
+    });
+
+    const buildSettings = configurations.debug.buildSettings;
+    expect(project.addTarget).not.toHaveBeenCalled();
+    expect(buildSettings.CURRENT_PROJECT_VERSION).toBe('1');
+    expect(buildSettings.MARKETING_VERSION).toBe('1.0.0');
+    expect(buildSettings.PRODUCT_BUNDLE_IDENTIFIER).toBe('"com.gtstewart16.recipeorganizer.share"');
+    expect(buildSettings.PRODUCT_BUNDLE_PACKAGE_TYPE).toBe('"XPC!"');
   });
 });

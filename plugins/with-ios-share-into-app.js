@@ -102,6 +102,24 @@ function renderInfoPlist() {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>$(DEVELOPMENT_LANGUAGE)</string>
+  <key>CFBundleDisplayName</key>
+  <string>Kitchen Shelf</string>
+  <key>CFBundleExecutable</key>
+  <string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundleIdentifier</key>
+  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>$(PRODUCT_NAME)</string>
+  <key>CFBundlePackageType</key>
+  <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key>
+  <string>$(CURRENT_PROJECT_VERSION)</string>
   <key>NSExtension</key>
   <dict>
     <key>NSExtensionAttributes</key>
@@ -143,25 +161,7 @@ function hasNativeTarget(project, targetName) {
   return Object.values(nativeTargets).some((target) => target?.name === `"${targetName}"`);
 }
 
-function addShareExtensionTarget(project, props) {
-  if (hasNativeTarget(project, SHARE_EXTENSION_NAME)) {
-    return;
-  }
-
-  const target = project.addTarget(
-    SHARE_EXTENSION_NAME,
-    'app_extension',
-    SHARE_EXTENSION_NAME,
-    props.extensionBundleIdentifier
-  );
-
-  project.addBuildPhase(
-    [`${SHARE_EXTENSION_NAME}/ShareViewController.swift`],
-    'PBXSourcesBuildPhase',
-    'Sources',
-    target.uuid
-  );
-
+function updateShareExtensionBuildSettings(project, props) {
   const configurations = project.pbxXCBuildConfigurationSection();
   Object.values(configurations).forEach((configuration) => {
     const buildSettings = configuration?.buildSettings;
@@ -171,10 +171,34 @@ function addShareExtensionTarget(project, props) {
 
     buildSettings.INFOPLIST_FILE = `"${SHARE_EXTENSION_NAME}/${SHARE_EXTENSION_NAME}-Info.plist"`;
     buildSettings.APPLICATION_EXTENSION_API_ONLY = 'YES';
+    buildSettings.CURRENT_PROJECT_VERSION = buildSettings.CURRENT_PROJECT_VERSION || '1';
     buildSettings.DEVELOPMENT_TEAM = buildSettings.DEVELOPMENT_TEAM || '""';
     buildSettings.IPHONEOS_DEPLOYMENT_TARGET = buildSettings.IPHONEOS_DEPLOYMENT_TARGET || '15.1';
+    buildSettings.MARKETING_VERSION = buildSettings.MARKETING_VERSION || '1.0.0';
+    buildSettings.PRODUCT_BUNDLE_IDENTIFIER = `"${props.extensionBundleIdentifier}"`;
+    buildSettings.PRODUCT_BUNDLE_PACKAGE_TYPE = '"XPC!"';
     buildSettings.SWIFT_VERSION = '5.0';
   });
+}
+
+function addShareExtensionTarget(project, props) {
+  if (!hasNativeTarget(project, SHARE_EXTENSION_NAME)) {
+    const target = project.addTarget(
+      SHARE_EXTENSION_NAME,
+      'app_extension',
+      SHARE_EXTENSION_NAME,
+      props.extensionBundleIdentifier
+    );
+
+    project.addBuildPhase(
+      [`${SHARE_EXTENSION_NAME}/ShareViewController.swift`],
+      'PBXSourcesBuildPhase',
+      'Sources',
+      target.uuid
+    );
+  }
+
+  updateShareExtensionBuildSettings(project, props);
 }
 
 function withIosShareIntoApp(config, options = {}) {
