@@ -369,10 +369,11 @@ export default function App() {
       }
 
       try {
-        await sharedImportStore.enqueue(record);
+        await sharedImportStore.enqueue({ ...record, status: 'processing' });
         setImportError(null);
         setActiveTab('add');
-        await refreshAndProcessSharedImports();
+        await refreshSharedImports();
+        void refreshAndProcessSharedImports();
       } catch (error) {
         setImportError(error instanceof Error ? error.message : 'We could not queue that shared import.');
         setActiveTab('add');

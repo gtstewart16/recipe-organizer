@@ -235,11 +235,13 @@ jest.mock('./src/lib/auth-session', () => ({
 
 import App from './App';
 import { clearAuthSession, loadAuthSession, persistAuthSession } from './src/lib/auth-session';
+import { importRecipeFromUrl } from './src/services/url-import';
 
 const mockLoadAuthSession = jest.mocked(loadAuthSession);
 const mockPersistAuthSession = jest.mocked(persistAuthSession);
 const mockClearAuthSession = jest.mocked(clearAuthSession);
 const mockAsyncStorage = jest.mocked(AsyncStorage);
+const mockImportRecipeFromUrl = jest.mocked(importRecipeFromUrl);
 let linkingUrlHandler: ((event: { url: string }) => void) | null = null;
 
 async function renderAppToSignInGate() {
@@ -505,6 +507,30 @@ describe('Recipe Organizer app', () => {
     expect(await screen.findByText('Shared imports')).toBeTruthy();
     expect(await screen.findByText('Cacio E Pepe')).toBeTruthy();
     expect(screen.queryByText(/No suitable URL request handler/i)).toBeNull();
+  });
+
+  it('shows a pasted shared import as processing before URL parsing finishes', async () => {
+    seedSharedImportStorage([]);
+    mockImportRecipeFromUrl.mockImplementationOnce(
+      () =>
+        new Promise(() => {
+          // Keep the import pending so the queued processing state is visible.
+        })
+    );
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+
+    fireEvent.changeText(
+      screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
+      'exp://192.168.4.28:8081/--/share?url=https%3A%2F%2Fwww.allrecipes.com%2Frecipe%2F282090%2Fcheesy-roasted-garlic-spaghetti-squash-with-spinach%2F'
+    );
+    fireEvent.press(screen.getByText('Create review draft'));
+
+    expect(await screen.findByText('Shared imports')).toBeTruthy();
+    expect(screen.getByText('Processing')).toBeTruthy();
+    expect(screen.getByText('allrecipes.com')).toBeTruthy();
   });
 
   it('lets the user leave the review screen and paste a different link', async () => {
