@@ -134,6 +134,8 @@ const readySharedImport: PendingSharedImport = {
   updatedAt: '2026-06-07T10:01:00.000Z',
 };
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const mockRepository = {
   loadState: jest.fn(async () => mockCloudState),
   createGroup: jest.fn(async () => mockCloudState),
@@ -1020,7 +1022,7 @@ describe('Recipe Organizer app', () => {
     await waitFor(() => {
       expect(mockRepository.upsertImportJob).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          id: 'share-ready-url',
+          id: expect.stringMatching(UUID_PATTERN),
           sourceType: 'url',
           sourceUrl: 'https://www.skinnytaste.com/mushroom-risotto',
           status: 'saved',
@@ -1032,6 +1034,21 @@ describe('Recipe Organizer app', () => {
         })
       );
     });
+  });
+
+  it('does not show an import draft error when shared import history logging fails after save', async () => {
+    seedSharedImportStorage([readySharedImport]);
+    mockRepository.upsertImportJob.mockRejectedValueOnce(new Error('We could not update that import draft right now.'));
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+    fireEvent.press(await screen.findByText('Review draft'));
+    fireEvent.press(screen.getByText('Weeknight'));
+    fireEvent.press(screen.getByText('Confirm recipe'));
+
+    expect(await screen.findByPlaceholderText('Rename group')).toBeTruthy();
+    expect(screen.queryByText('We could not update that import draft right now.')).toBeNull();
   });
 
   it('preserves shared import group selections when returning to the queue', async () => {

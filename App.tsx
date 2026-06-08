@@ -544,7 +544,9 @@ export default function App() {
         setSyncError(null);
       }
     } catch (error) {
-      setSyncError(error instanceof Error ? error.message : 'We could not update that import draft right now.');
+      if (job.status !== 'saved') {
+        setSyncError(error instanceof Error ? error.message : 'We could not update that import draft right now.');
+      }
     }
   };
 
@@ -968,7 +970,7 @@ export default function App() {
       const timestamp = new Date().toISOString();
 
       await persistImportJob({
-        id: activeSharedImportId,
+        id: createImportJobId(),
         sourceType: reviewDraft.sourceType,
         sourceUrl: normalizedDraft.sourceUrl,
         sourcePhotoUris: normalizedDraft.sourcePhotoUris,
