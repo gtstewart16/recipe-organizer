@@ -616,6 +616,14 @@ export default function App() {
   };
 
   const beginUrlReview = async () => {
+    const trimmedUrl = urlInput.trim();
+
+    if (createSharedImportFromDeepLink(trimmedUrl)) {
+      await handleSharedImportDeepLink(trimmedUrl);
+      setUrlInput('');
+      return;
+    }
+
     await startUrlReview({ sourceUrl: urlInput });
   };
 

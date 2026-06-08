@@ -33,6 +33,10 @@ export async function importRecipeFromUrl(
   sourceUrl: string,
   options: ImportOptions = {}
 ): Promise<RecipeDraft> {
+  if (!isWebUrl(sourceUrl)) {
+    throw new Error('Paste a web recipe link that starts with http:// or https://.');
+  }
+
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(sourceUrl);
 
@@ -128,6 +132,15 @@ async function normalizeRecipeWithRemoteFunction(
   }
 
   return (await response.json()) as RecipeNormalizationOutput;
+}
+
+function isWebUrl(sourceUrl: string) {
+  try {
+    const parsedUrl = new URL(sourceUrl);
+    return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function tryBuildInstagramDraft(sourceUrl: string, html: string): RecipeDraft | null {

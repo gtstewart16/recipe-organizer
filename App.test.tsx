@@ -489,6 +489,24 @@ describe('Recipe Organizer app', () => {
     expect(screen.getByText('Confirm recipe')).toBeTruthy();
   });
 
+  it('queues a pasted Expo shared import link instead of fetching it as a recipe URL', async () => {
+    seedSharedImportStorage([]);
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+
+    fireEvent.changeText(
+      screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
+      'exp://192.168.4.28:8081/--/share?url=https%3A%2F%2Fexample.com%2Fcacio-e-pepe'
+    );
+    fireEvent.press(screen.getByText('Create review draft'));
+
+    expect(await screen.findByText('Shared imports')).toBeTruthy();
+    expect(await screen.findByText('Cacio E Pepe')).toBeTruthy();
+    expect(screen.queryByText(/No suitable URL request handler/i)).toBeNull();
+  });
+
   it('lets the user leave the review screen and paste a different link', async () => {
     await renderAppToSignInGate();
     await signInToLibrary();

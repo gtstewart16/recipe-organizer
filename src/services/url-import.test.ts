@@ -1,6 +1,17 @@
 import { importRecipeFromUrl } from './url-import';
 
 describe('importRecipeFromUrl', () => {
+  it('rejects non-web URLs before fetching', async () => {
+    const fetcher = jest.fn();
+
+    await expect(
+      importRecipeFromUrl('exp://192.168.4.28:8081/--/share?url=https%3A%2F%2Fexample.com%2Frecipe', {
+        fetcher,
+      })
+    ).rejects.toThrow('Paste a web recipe link that starts with http:// or https://.');
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it('parses recipe schema JSON-LD into a review draft', async () => {
     const draft = await importRecipeFromUrl('https://example.com/cacio-e-pepe', {
       fetcher: async () =>
