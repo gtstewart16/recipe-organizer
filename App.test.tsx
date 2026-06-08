@@ -506,8 +506,8 @@ describe('Recipe Organizer app', () => {
     );
     fireEvent.press(screen.getByText('Create review draft'));
 
-    expect(await screen.findByText('Shared imports')).toBeTruthy();
-    expect(await screen.findByText('Cacio E Pepe')).toBeTruthy();
+    expect(await screen.findByText('Review import')).toBeTruthy();
+    expect(await screen.findByDisplayValue('Cacio E Pepe')).toBeTruthy();
     expect(screen.queryByText(/No suitable URL request handler/i)).toBeNull();
   });
 
@@ -929,8 +929,22 @@ describe('Recipe Organizer app', () => {
     fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
     fireEvent.press(screen.getByText('Continue to library'));
 
-    expect(await screen.findByText('Shared imports')).toBeTruthy();
-    expect(await screen.findByText('Cacio E Pepe')).toBeTruthy();
+    expect(await screen.findByText('Review import')).toBeTruthy();
+    expect(await screen.findByDisplayValue('Cacio E Pepe')).toBeTruthy();
+    await waitFor(() => {
+      expect(mockRepository.upsertImportJob).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceType: 'url',
+          sourceUrl: 'https://example.com/cacio-e-pepe',
+          status: 'in_review',
+          title: 'Cacio E Pepe',
+          draft: expect.objectContaining({
+            title: 'Cacio E Pepe',
+            sourceUrl: 'https://example.com/cacio-e-pepe',
+          }),
+        })
+      );
+    });
   });
 
   it('queues and processes a shared import from an Expo Go deep link', async () => {
@@ -946,8 +960,8 @@ describe('Recipe Organizer app', () => {
     fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
     fireEvent.press(screen.getByText('Continue to library'));
 
-    expect(await screen.findByText('Shared imports')).toBeTruthy();
-    expect(await screen.findByText('Cacio E Pepe')).toBeTruthy();
+    expect(await screen.findByText('Review import')).toBeTruthy();
+    expect(await screen.findByDisplayValue('Cacio E Pepe')).toBeTruthy();
   });
 
   it('queues and processes a shared import from a runtime deep link event', async () => {
@@ -963,8 +977,8 @@ describe('Recipe Organizer app', () => {
       await Promise.resolve();
     });
 
-    expect(await screen.findByText('Shared imports')).toBeTruthy();
-    expect(await screen.findByText('Ingredients: rice')).toBeTruthy();
+    expect(await screen.findByText('Review import')).toBeTruthy();
+    expect(await screen.findByDisplayValue('Ingredients: rice')).toBeTruthy();
   });
 
   it('shows an Add-tab error when a deep link cannot be queued', async () => {

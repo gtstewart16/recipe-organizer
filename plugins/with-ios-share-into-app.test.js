@@ -25,6 +25,8 @@ describe('with-ios-share-into-app', () => {
     expect(controller).toContain('appScheme + "://share?url="');
     expect(controller).toContain('appScheme + "://share?text="');
     expect(controller).toContain('extensionContext?.open(deepLinkURL');
+    expect(controller).toContain('sel_registerName("openURL:")');
+    expect(controller).toContain('currentResponder.perform(openUrlSelector, with: deepLinkURL)');
 
     expect(plist).toContain('NSExtensionActivationSupportsWebURLWithMaxCount');
     expect(plist).toContain('NSExtensionActivationSupportsText');
@@ -96,5 +98,31 @@ describe('with-ios-share-into-app', () => {
     expect(buildSettings.MARKETING_VERSION).toBe('1.0.0');
     expect(buildSettings.PRODUCT_BUNDLE_IDENTIFIER).toBe('"com.gtstewart16.recipeorganizer.share"');
     expect(buildSettings.PRODUCT_BUNDLE_PACKAGE_TYPE).toBe('"XPC!"');
+  });
+
+  it('treats quoted and unquoted existing share extension targets as already present', () => {
+    const configurations = {
+      debug: {
+        buildSettings: {
+          PRODUCT_NAME: `"${SHARE_EXTENSION_NAME}"`,
+        },
+      },
+    };
+    const project = {
+      pbxNativeTargetSection: () => ({
+        existingTarget: {
+          name: SHARE_EXTENSION_NAME,
+        },
+      }),
+      addTarget: jest.fn(),
+      addBuildPhase: jest.fn(),
+      pbxXCBuildConfigurationSection: () => configurations,
+    };
+
+    addShareExtensionTarget(project, {
+      extensionBundleIdentifier: 'com.gtstewart16.recipeorganizer.share',
+    });
+
+    expect(project.addTarget).not.toHaveBeenCalled();
   });
 });

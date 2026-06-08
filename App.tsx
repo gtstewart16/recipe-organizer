@@ -327,6 +327,23 @@ export default function App() {
   const sortSharedImports = (items: PendingSharedImport[]) =>
     [...items].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 
+  const persistImportJob = async (job: ImportJob) => {
+    try {
+      if (cloudRepository) {
+        const nextState = await cloudRepository.upsertImportJob(job);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
+      } else {
+        dispatch({ type: 'importJob/upserted', payload: job });
+        setSyncError(null);
+      }
+    } catch (error) {
+      if (job.status !== 'saved') {
+        setSyncError(error instanceof Error ? error.message : 'We could not update that import draft right now.');
+      }
+    }
+  };
+
   const refreshSharedImports = useCallback(async () => {
     try {
       const records = await sharedImportStore.list();
@@ -360,6 +377,55 @@ export default function App() {
     }
   }, [refreshSharedImports]);
 
+  const openSharedImportForReview = useCallback(
+    async (record: PendingSharedImport) => {
+      if (!record.draft) {
+        setImportError('This shared import is not ready to review yet.');
+        setActiveTab('add');
+        return;
+      }
+
+      const selectedGroupIds = readSelectedGroupIds(record.draft);
+      const reviewImportDraft = { ...record.draft, selectedGroupIds };
+      const timestamp = new Date().toISOString();
+      const existingJob =
+        record.draft.sourceType === 'url'
+          ? state.importJobs.find(
+              (job) =>
+                job.status === 'in_review' &&
+                job.sourceType === 'url' &&
+                job.sourceUrl === record.draft?.sourceUrl
+            )
+          : undefined;
+      const jobId =
+        record.draft.sourceType === 'url' || record.draft.sourceType === 'photo'
+          ? existingJob?.id ?? createImportJobId()
+          : null;
+
+      setImportError(null);
+      setActiveSharedImportId(record.id);
+      setActiveImportJobId(jobId);
+      setEditingRecipeId(null);
+      setReviewDraft(reviewImportDraft);
+      setActiveTab('add');
+
+      if (jobId && (record.draft.sourceType === 'url' || record.draft.sourceType === 'photo')) {
+        await persistImportJob({
+          id: jobId,
+          sourceType: record.draft.sourceType,
+          sourceUrl: record.draft.sourceUrl,
+          sourcePhotoUris: record.draft.sourcePhotoUris,
+          title: record.draft.title.trim() || 'Imported Recipe',
+          status: 'in_review',
+          draft: reviewImportDraft,
+          createdAt: existingJob?.createdAt ?? timestamp,
+          updatedAt: timestamp,
+        });
+      }
+    },
+    [state.importJobs]
+  );
+
   const handleSharedImportDeepLink = useCallback(
     async (url: string) => {
       const record = createSharedImportFromDeepLink(url);
@@ -369,17 +435,24 @@ export default function App() {
       }
 
       try {
-        await sharedImportStore.enqueue({ ...record, status: 'processing' });
+        const processingRecord = { ...record, status: 'processing' as const };
+        await sharedImportStore.enqueue(processingRecord);
         setImportError(null);
         setActiveTab('add');
         await refreshSharedImports();
-        void refreshAndProcessSharedImports();
+        const processedRecord = await processPendingSharedImport(processingRecord);
+        await sharedImportStore.replaceExisting(processedRecord);
+        await refreshSharedImports();
+
+        if (processedRecord.status === 'ready') {
+          await openSharedImportForReview(processedRecord);
+        }
       } catch (error) {
         setImportError(error instanceof Error ? error.message : 'We could not queue that shared import.');
         setActiveTab('add');
       }
     },
-    [refreshAndProcessSharedImports]
+    [openSharedImportForReview, refreshSharedImports]
   );
 
   useEffect(() => {
@@ -530,23 +603,6 @@ export default function App() {
       }
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : 'We could not rename that group.');
-    }
-  };
-
-  const persistImportJob = async (job: ImportJob) => {
-    try {
-      if (cloudRepository) {
-        const nextState = await cloudRepository.upsertImportJob(job);
-        dispatch({ type: 'state/hydrated', payload: nextState });
-        markCloudSyncSuccess();
-      } else {
-        dispatch({ type: 'importJob/upserted', payload: job });
-        setSyncError(null);
-      }
-    } catch (error) {
-      if (job.status !== 'saved') {
-        setSyncError(error instanceof Error ? error.message : 'We could not update that import draft right now.');
-      }
     }
   };
 
@@ -847,17 +903,12 @@ export default function App() {
   const handleOpenSharedImport = (id: string) => {
     const match = sharedImports.find((item) => item.id === id);
 
-    if (!match?.draft) {
+    if (!match) {
       setImportError('This shared import is not ready to review yet.');
       return;
     }
 
-    setImportError(null);
-    setActiveSharedImportId(id);
-    setActiveImportJobId(null);
-    setEditingRecipeId(null);
-    setReviewDraft({ ...match.draft, selectedGroupIds: readSelectedGroupIds(match.draft) });
-    setActiveTab('add');
+    void openSharedImportForReview(match);
   };
 
   const handleRetrySharedImport = async (id: string) => {
@@ -966,7 +1017,7 @@ export default function App() {
       });
     }
 
-    if (activeSharedImportId && (reviewDraft.sourceType === 'url' || reviewDraft.sourceType === 'photo')) {
+    if (activeSharedImportId && !activeImportJobId && (reviewDraft.sourceType === 'url' || reviewDraft.sourceType === 'photo')) {
       const timestamp = new Date().toISOString();
 
       await persistImportJob({

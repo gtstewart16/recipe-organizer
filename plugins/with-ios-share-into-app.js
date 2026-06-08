@@ -85,9 +85,30 @@ final class ShareViewController: UIViewController {
       return
     }
 
-    extensionContext?.open(deepLinkURL) { [weak self] _ in
-      self?.finish()
+    extensionContext?.open(deepLinkURL) { [weak self] didOpen in
+      if didOpen {
+        self?.finish()
+      } else {
+        self?.openViaResponderChain(deepLinkURL)
+      }
     }
+  }
+
+  private func openViaResponderChain(_ deepLinkURL: URL) {
+    let openUrlSelector = sel_registerName("openURL:")
+    var responder: UIResponder? = self
+
+    while let currentResponder = responder {
+      if currentResponder.responds(to: openUrlSelector) {
+        currentResponder.perform(openUrlSelector, with: deepLinkURL)
+        finish()
+        return
+      }
+
+      responder = currentResponder.next
+    }
+
+    finish()
   }
 
   private func finish() {
@@ -158,14 +179,18 @@ function writeShareExtensionFiles(iosRoot, props) {
 
 function hasNativeTarget(project, targetName) {
   const nativeTargets = project.pbxNativeTargetSection();
-  return Object.values(nativeTargets).some((target) => target?.name === `"${targetName}"`);
+  return Object.values(nativeTargets).some((target) => normalizePbxValue(target?.name) === targetName);
+}
+
+function normalizePbxValue(value) {
+  return typeof value === 'string' ? value.replace(/^"|"$/g, '') : value;
 }
 
 function updateShareExtensionBuildSettings(project, props) {
   const configurations = project.pbxXCBuildConfigurationSection();
   Object.values(configurations).forEach((configuration) => {
     const buildSettings = configuration?.buildSettings;
-    if (!buildSettings || buildSettings.PRODUCT_NAME !== `"${SHARE_EXTENSION_NAME}"`) {
+    if (!buildSettings || normalizePbxValue(buildSettings.PRODUCT_NAME) !== SHARE_EXTENSION_NAME) {
       return;
     }
 
