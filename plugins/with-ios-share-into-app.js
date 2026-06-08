@@ -155,8 +155,12 @@ function addShareExtensionTarget(project, props) {
     props.extensionBundleIdentifier
   );
 
-  project.addBuildPhase([], 'PBXSourcesBuildPhase', 'Sources', target.uuid);
-  project.addSourceFile(`${SHARE_EXTENSION_NAME}/ShareViewController.swift`, { target: target.uuid });
+  project.addBuildPhase(
+    [`${SHARE_EXTENSION_NAME}/ShareViewController.swift`],
+    'PBXSourcesBuildPhase',
+    'Sources',
+    target.uuid
+  );
 
   const configurations = project.pbxXCBuildConfigurationSection();
   Object.values(configurations).forEach((configuration) => {
