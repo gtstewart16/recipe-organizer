@@ -1,5 +1,5 @@
 type ImportRecipeRequest = {
-  sourceType: 'url' | 'photo';
+  sourceType: 'url' | 'photo' | 'shared_text';
   sourceUrl?: string;
   sourcePhotoUris?: string[];
   imageDataUrls?: string[];
@@ -8,23 +8,30 @@ type ImportRecipeRequest = {
 };
 
 type ImportRecipeResponse = {
+  isRecipe: boolean;
   title: string;
   description?: string;
-  sourceType: 'url' | 'photo';
+  sourceType: 'url' | 'photo' | 'shared_text';
   sourceUrl?: string;
   sourcePhotoUris: string[];
   ingredients: string[];
   instructions: string[];
   servings?: string;
+  prepTime?: string;
+  cookTime?: string;
   status: 'needs_review';
 };
 
 type OpenAIRecipe = {
+  isRecipe: boolean;
+  error?: string | null;
   title: string;
   description?: string;
   ingredients: string[];
   instructions: string[];
   servings?: string;
+  prepTime?: string;
+  cookTime?: string;
 };
 
 const corsHeaders = {
@@ -40,13 +47,27 @@ const RECIPE_SCHEMA = {
     additionalProperties: false,
     properties: {
       title: {
-        type: 'string',
+        type: ['string', 'null'],
         description: 'Strictly the dish name only. No creator names, emojis, or phrases like recipe below.',
+      },
+      isRecipe: {
+        type: 'boolean',
+        description: 'True only when the source clearly contains a recipe with ingredients and directions.',
+      },
+      error: {
+        type: ['string', 'null'],
+        description: 'If isRecipe is false, give a short user-facing reason.',
       },
       description: {
         type: ['string', 'null'],
       },
       servings: {
+        type: ['string', 'null'],
+      },
+      prepTime: {
+        type: ['string', 'null'],
+      },
+      cookTime: {
         type: ['string', 'null'],
       },
       ingredients: {
@@ -62,7 +83,7 @@ const RECIPE_SCHEMA = {
         },
       },
     },
-    required: ['title', 'description', 'servings', 'ingredients', 'instructions'],
+    required: ['isRecipe', 'error', 'title', 'description', 'servings', 'prepTime', 'cookTime', 'ingredients', 'instructions'],
   },
 };
 
@@ -85,10 +106,16 @@ function deriveTitleFromUrl(sourceUrl: string) {
 }
 
 function buildFallbackResponse(request: ImportRecipeRequest): ImportRecipeResponse {
-  if (request.sourceType === 'url') {
+  if (request.sourceType === 'url' || request.sourceType === 'shared_text') {
+    const title =
+      request.sourceType === 'shared_text'
+        ? request.rawText?.split('\n').map((line) => line.trim()).find(Boolean)?.slice(0, 60) ?? 'Shared Recipe Draft'
+        : deriveTitleFromUrl(request.sourceUrl ?? '');
+
     return {
-      title: deriveTitleFromUrl(request.sourceUrl ?? ''),
-      sourceType: 'url',
+      isRecipe: true,
+      title,
+      sourceType: request.sourceType,
       sourceUrl: request.sourceUrl,
       sourcePhotoUris: [],
       ingredients: [
@@ -106,6 +133,7 @@ function buildFallbackResponse(request: ImportRecipeRequest): ImportRecipeRespon
   }
 
   return {
+    isRecipe: true,
     title: 'Cookbook Recipe Draft',
     sourceType: 'photo',
     sourcePhotoUris: request.sourcePhotoUris ?? [],
@@ -135,10 +163,12 @@ async function normalizeRecipeWithOpenAI(request: ImportRecipeRequest): Promise<
       ? [
           'You extract recipe data from cookbook photos and return clean structured recipe data.',
           'Rules:',
+          '- If this is not actually a recipe page, set isRecipe to false, provide a short error message, and leave title null with empty ingredients and instructions arrays.',
           '- Read the recipe title from the page and return only the dish name.',
           '- Put only ingredient lines in ingredients.',
           '- Put only preparation or cooking steps in instructions.',
           '- Preserve servings when it appears on the page.',
+          '- Preserve prep time and cook time when they appear on the page.',
           '- If the page includes grouped ingredients, keep each ingredient as its own line.',
           '- Ignore nutrition, storage notes, page numbers, and unrelated cookbook metadata.',
           '- If description is not useful, return null for description.',
@@ -148,12 +178,14 @@ async function normalizeRecipeWithOpenAI(request: ImportRecipeRequest): Promise<
       : [
           'You convert scraped social and web recipe text into clean structured recipe data.',
           'Rules:',
+          '- If the source does not clearly contain a recipe, set isRecipe to false, provide a short error message, and leave title null with empty ingredients and instructions arrays.',
           '- Output only the dish name in the title field.',
           '- Remove creator names, emojis, engagement text, and phrases like "recipe below".',
           '- Put only ingredient lines in ingredients.',
           '- Put only cooking/preparation steps in instructions.',
           '- If ingredients are grouped (such as sauce or topping), keep each ingredient as its own line.',
           '- If servings appear, preserve them in the servings field.',
+          '- If prep or cook time appear, preserve them in prepTime and cookTime.',
           '- If description is not useful, return null for description.',
           '',
           `Source URL: ${request.sourceUrl ?? ''}`,
@@ -163,7 +195,7 @@ async function normalizeRecipeWithOpenAI(request: ImportRecipeRequest): Promise<
           request.rawText ?? '',
         ].join('\n');
 
-  if (request.sourceType === 'url' && !request.rawText?.trim()) {
+  if ((request.sourceType === 'url' || request.sourceType === 'shared_text') && !request.rawText?.trim()) {
     return null;
   }
 
@@ -226,6 +258,7 @@ async function normalizeRecipeWithOpenAI(request: ImportRecipeRequest): Promise<
 
 function buildResponse(request: ImportRecipeRequest, normalized: OpenAIRecipe): ImportRecipeResponse {
   return {
+    isRecipe: true,
     title: normalized.title,
     description: normalized.description ?? undefined,
     sourceType: request.sourceType,
@@ -234,6 +267,8 @@ function buildResponse(request: ImportRecipeRequest, normalized: OpenAIRecipe): 
     ingredients: normalized.ingredients,
     instructions: normalized.instructions,
     servings: normalized.servings ?? undefined,
+    prepTime: normalized.prepTime ?? undefined,
+    cookTime: normalized.cookTime ?? undefined,
     status: 'needs_review',
   };
 }
@@ -246,6 +281,18 @@ Deno.serve(async (request) => {
   try {
     const body = (await request.json()) as ImportRecipeRequest;
     const normalized = await normalizeRecipeWithOpenAI(body);
+    if (normalized && normalized.isRecipe === false) {
+      return Response.json(
+        {
+          error: normalized.error ?? 'This content does not appear to contain a recipe.',
+        },
+        {
+          status: 422,
+          headers: corsHeaders,
+        }
+      );
+    }
+
     const response = normalized ? buildResponse(body, normalized) : buildFallbackResponse(body);
 
     return Response.json(response, {

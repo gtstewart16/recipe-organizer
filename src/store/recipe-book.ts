@@ -1,5 +1,6 @@
-export type RecipeSourceType = 'url' | 'photo' | 'manual';
+export type RecipeSourceType = 'url' | 'photo' | 'manual' | 'shared_text';
 export type RecipeStatus = 'needs_review' | 'ready' | 'failed';
+export type ImportJobStatus = 'failed' | 'in_review' | 'saved';
 
 export type RecipeDraft = {
   title: string;
@@ -11,7 +12,13 @@ export type RecipeDraft = {
   ingredients: string[];
   instructions: string[];
   servings?: string;
+  prepTime?: string;
+  cookTime?: string;
   status: RecipeStatus;
+};
+
+export type ImportJobDraft = RecipeDraft & {
+  selectedGroupIds?: string[];
 };
 
 export type RecipeRecord = RecipeDraft & {
@@ -20,9 +27,24 @@ export type RecipeRecord = RecipeDraft & {
   updatedAt: string;
 };
 
+export type ImportJob = {
+  id: string;
+  sourceType: 'url' | 'photo';
+  sourceUrl?: string;
+  sourcePhotoUris: string[];
+  title: string;
+  status: ImportJobStatus;
+  errorMessage?: string;
+  draft?: ImportJobDraft;
+  recipeId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type RecipeGroup = {
   id: string;
   name: string;
+  isFavorite?: boolean;
 };
 
 export type RecipeGroupMembership = {
@@ -34,13 +56,17 @@ export type RecipeBookState = {
   recipes: RecipeRecord[];
   groups: RecipeGroup[];
   memberships: RecipeGroupMembership[];
+  importJobs: ImportJob[];
 };
 
 export type RecipeBookAction =
   | { type: 'state/hydrated'; payload: RecipeBookState }
   | { type: 'group/created'; payload: RecipeGroup }
   | { type: 'group/renamed'; payload: RecipeGroup }
+  | { type: 'group/favoriteToggled'; payload: { id: string; isFavorite: boolean } }
   | { type: 'group/deleted'; payload: { id: string } }
+  | { type: 'importJob/upserted'; payload: ImportJob }
+  | { type: 'importJob/removed'; payload: { id: string } }
   | {
       type: 'recipe/imported';
       payload: {
@@ -80,6 +106,7 @@ export function createEmptyRecipeBookState(): RecipeBookState {
     recipes: [],
     groups: [],
     memberships: [],
+    importJobs: [],
   };
 }
 
@@ -93,6 +120,8 @@ export function createRecipeBookDraftFromUrl(sourceUrl: string): RecipeDraft {
     sourcePhotoUris: [],
     ingredients: DEFAULT_INGREDIENTS,
     instructions: DEFAULT_INSTRUCTIONS,
+    prepTime: undefined,
+    cookTime: undefined,
     status: 'needs_review',
   };
 }
@@ -100,10 +129,33 @@ export function createRecipeBookDraftFromUrl(sourceUrl: string): RecipeDraft {
 export function createRecipeBookDraftFromPhoto(sourcePhotoUris: string[]): RecipeDraft {
   return {
     title: 'Cookbook Recipe Draft',
+    heroImageUri: sourcePhotoUris[0],
     sourceType: 'photo',
     sourcePhotoUris,
     ingredients: DEFAULT_INGREDIENTS,
     instructions: DEFAULT_INSTRUCTIONS,
+    prepTime: undefined,
+    cookTime: undefined,
+    status: 'needs_review',
+  };
+}
+
+export function createRecipeBookDraftFromSharedText(sharedText: string): RecipeDraft {
+  const title =
+    sharedText
+      .split('\n')
+      .map((line) => line.trim())
+      .find(Boolean)
+      ?.slice(0, 60) || 'Shared Recipe Draft';
+
+  return {
+    title,
+    sourceType: 'shared_text',
+    sourcePhotoUris: [],
+    ingredients: DEFAULT_INGREDIENTS,
+    instructions: DEFAULT_INSTRUCTIONS,
+    prepTime: undefined,
+    cookTime: undefined,
     status: 'needs_review',
   };
 }
@@ -114,19 +166,39 @@ export function recipeBookReducer(
 ): RecipeBookState {
   switch (action.type) {
     case 'state/hydrated':
-      return action.payload;
+      return {
+        ...action.payload,
+        groups: action.payload.groups.map(normalizeRecipeGroup),
+      };
     case 'group/created':
       return {
         ...state,
         groups: state.groups.some((group) => group.id === action.payload.id)
           ? state.groups
-          : [...state.groups, action.payload],
+          : [...state.groups, normalizeRecipeGroup(action.payload)],
       };
     case 'group/renamed':
       return {
         ...state,
         groups: state.groups.map((group) =>
-          group.id === action.payload.id ? { ...group, name: action.payload.name } : group
+          group.id === action.payload.id
+            ? normalizeRecipeGroup({
+                ...group,
+                name: action.payload.name,
+              })
+            : normalizeRecipeGroup(group)
+        ),
+      };
+    case 'group/favoriteToggled':
+      return {
+        ...state,
+        groups: state.groups.map((group) =>
+          group.id === action.payload.id
+            ? {
+                ...group,
+                isFavorite: action.payload.isFavorite,
+              }
+            : normalizeRecipeGroup(group)
         ),
       };
     case 'group/deleted':
@@ -137,8 +209,23 @@ export function recipeBookReducer(
           (membership) => membership.groupId !== action.payload.id
         ),
       };
+    case 'importJob/upserted': {
+      const remaining = state.importJobs.filter((job) => job.id !== action.payload.id);
+
+      return {
+        ...state,
+        importJobs: [action.payload, ...remaining].sort((left, right) =>
+          right.updatedAt.localeCompare(left.updatedAt)
+        ),
+      };
+    }
+    case 'importJob/removed':
+      return {
+        ...state,
+        importJobs: state.importJobs.filter((job) => job.id !== action.payload.id),
+      };
     case 'recipe/imported': {
-      const recipeId = `recipe-${state.recipes.length + 1}`;
+      const recipeId = createNextRecipeId(state.recipes);
       const now = new Date().toISOString();
       const recipe: RecipeRecord = {
         ...action.payload.draft,
@@ -208,6 +295,18 @@ export function selectFilteredRecipes(state: RecipeBookState, query: string): Re
   });
 }
 
+export function selectImportHistory(state: RecipeBookState) {
+  const jobs = [...state.importJobs].sort((left, right) =>
+    right.updatedAt.localeCompare(left.updatedAt)
+  );
+
+  return {
+    failed: jobs.filter((job) => job.status === 'failed'),
+    inReview: jobs.filter((job) => job.status === 'in_review'),
+    saved: jobs.filter((job) => job.status === 'saved').slice(0, 5),
+  };
+}
+
 function deriveTitleFromUrl(sourceUrl: string): string {
   try {
     const pathname = new URL(sourceUrl).pathname
@@ -227,4 +326,26 @@ function deriveTitleFromUrl(sourceUrl: string): string {
   } catch {
     return 'Imported Recipe Draft';
   }
+}
+
+function createNextRecipeId(recipes: RecipeRecord[]): string {
+  const nextNumericId =
+    recipes.reduce((maxId, recipe) => {
+      const match = recipe.id.match(/^recipe-(\d+)$/);
+
+      if (!match) {
+        return maxId;
+      }
+
+      return Math.max(maxId, Number(match[1]));
+    }, 0) + 1;
+
+  return `recipe-${nextNumericId}`;
+}
+
+function normalizeRecipeGroup(group: RecipeGroup): RecipeGroup {
+  return {
+    ...group,
+    isFavorite: group.isFavorite ?? false,
+  };
 }

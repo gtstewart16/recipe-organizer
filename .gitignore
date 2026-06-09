@@ -26,6 +26,9 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
+# Superpowers visual brainstorming scratch files
+.superpowers/
+
 # macOS
 .DS_Store
 *.pem

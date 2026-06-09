@@ -1,4 +1,5 @@
 import { env, hasRemoteImportFunction } from '../lib/env';
+import { formatRecipeDuration } from '../lib/duration';
 import { createRecipeBookDraftFromPhoto, RecipeDraft } from '../store/recipe-book';
 
 type PhotoAssetInput = {
@@ -19,6 +20,8 @@ type RecipeNormalizationOutput = {
   ingredients?: string[];
   instructions?: string[];
   servings?: string;
+  prepTime?: string;
+  cookTime?: string;
 };
 
 type ImportOptions = {
@@ -62,6 +65,8 @@ export async function importRecipeFromPhoto(
     ingredients: normalized.ingredients,
     instructions: normalized.instructions,
     servings: normalized.servings,
+    prepTime: formatRecipeDuration(normalized.prepTime),
+    cookTime: formatRecipeDuration(normalized.cookTime),
   };
 }
 

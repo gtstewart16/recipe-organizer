@@ -1,5 +1,6 @@
 import { createRecipeBookDraftFromUrl, RecipeDraft } from '../store/recipe-book';
 import { env, hasRemoteImportFunction } from '../lib/env';
+import { formatRecipeDuration } from '../lib/duration';
 
 type Fetcher = typeof fetch;
 
@@ -11,11 +12,15 @@ type RecipeNormalizationInput = {
 };
 
 type RecipeNormalizationOutput = {
+  isRecipe?: boolean;
+  error?: string;
   title?: string;
   description?: string;
   ingredients?: string[];
   instructions?: string[];
   servings?: string;
+  prepTime?: string;
+  cookTime?: string;
 };
 
 type ImportOptions = {
@@ -29,6 +34,10 @@ export async function importRecipeFromUrl(
   sourceUrl: string,
   options: ImportOptions = {}
 ): Promise<RecipeDraft> {
+  if (!isWebUrl(sourceUrl)) {
+    throw new Error('Paste a web recipe link that starts with http:// or https://.');
+  }
+
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(sourceUrl);
 
@@ -49,6 +58,10 @@ export async function importRecipeFromUrl(
       pageTitle,
     });
 
+    if (normalized?.isRecipe === false) {
+      throw new Error(normalized.error ?? 'This link does not appear to contain a recipe.');
+    }
+
     if (normalized?.title && normalized.ingredients?.length && normalized.instructions?.length) {
       return {
         ...createRecipeBookDraftFromUrl(sourceUrl),
@@ -57,6 +70,8 @@ export async function importRecipeFromUrl(
         ingredients: normalized.ingredients,
         instructions: normalized.instructions,
         servings: normalized.servings,
+        prepTime: formatRecipeDuration(normalized.prepTime),
+        cookTime: formatRecipeDuration(normalized.cookTime),
       };
     }
   }
@@ -80,6 +95,8 @@ export async function importRecipeFromUrl(
     ingredients: getIngredients(recipeNode.recipeIngredient),
     instructions: getInstructions(recipeNode.recipeInstructions),
     servings: getString(recipeNode.recipeYield),
+    prepTime: getDurationLabel(recipeNode.prepTime),
+    cookTime: getDurationLabel(recipeNode.cookTime),
   };
 }
 
@@ -101,10 +118,30 @@ async function normalizeRecipeWithRemoteFunction(
   });
 
   if (!response.ok) {
-    return null;
+    let errorMessage = 'We could not import that recipe link right now.';
+
+    try {
+      const payload = (await response.json()) as { error?: string };
+      if (payload.error) {
+        errorMessage = payload.error;
+      }
+    } catch {
+      // Leave the default message in place when the response body is not JSON.
+    }
+
+    throw new Error(errorMessage);
   }
 
   return (await response.json()) as RecipeNormalizationOutput;
+}
+
+function isWebUrl(sourceUrl: string) {
+  try {
+    const parsedUrl = new URL(sourceUrl);
+    return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function tryBuildInstagramDraft(sourceUrl: string, html: string): RecipeDraft | null {
@@ -249,6 +286,16 @@ function getIngredients(value: unknown): string[] {
     .filter(Boolean);
 
   return ingredients.length > 0 ? ingredients : createRecipeBookDraftFromUrl('https://example.com').ingredients;
+}
+
+function getDurationLabel(value: unknown): string | undefined {
+  const raw = getString(value);
+
+  if (!raw) {
+    return undefined;
+  }
+
+  return formatRecipeDuration(raw);
 }
 
 function getInstructions(value: unknown): string[] {

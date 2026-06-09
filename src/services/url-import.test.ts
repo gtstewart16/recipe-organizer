@@ -1,6 +1,17 @@
 import { importRecipeFromUrl } from './url-import';
 
 describe('importRecipeFromUrl', () => {
+  it('rejects non-web URLs before fetching', async () => {
+    const fetcher = jest.fn();
+
+    await expect(
+      importRecipeFromUrl('exp://192.168.4.28:8081/--/share?url=https%3A%2F%2Fexample.com%2Frecipe', {
+        fetcher,
+      })
+    ).rejects.toThrow('Paste a web recipe link that starts with http:// or https://.');
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it('parses recipe schema JSON-LD into a review draft', async () => {
     const draft = await importRecipeFromUrl('https://example.com/cacio-e-pepe', {
       fetcher: async () =>
@@ -15,6 +26,8 @@ describe('importRecipeFromUrl', () => {
                     "name": "Cacio e Pepe",
                     "image": ["https://images.example.com/cacio.jpg"],
                     "recipeYield": "4",
+                    "prepTime": "PT15M",
+                    "cookTime": "PT20M",
                     "recipeIngredient": [
                       "12 ounces spaghetti",
                       "2 cups Pecorino Romano",
@@ -37,6 +50,8 @@ describe('importRecipeFromUrl', () => {
     expect(draft.title).toBe('Cacio e Pepe');
     expect(draft.heroImageUri).toBe('https://images.example.com/cacio.jpg');
     expect(draft.servings).toBe('4');
+    expect(draft.prepTime).toBe('15 mins');
+    expect(draft.cookTime).toBe('20 mins');
     expect(draft.ingredients).toEqual([
       '12 ounces spaghetti',
       '2 cups Pecorino Romano',
@@ -57,6 +72,22 @@ describe('importRecipeFromUrl', () => {
     expect(draft.title).toBe('Not A Recipe');
     expect(draft.status).toBe('needs_review');
     expect(draft.ingredients.length).toBeGreaterThan(0);
+  });
+
+  it('formats ISO durations returned by the remote normalizer', async () => {
+    const draft = await importRecipeFromUrl('https://example.com/remote-recipe', {
+      fetcher: async () => new Response('<html><body>recipe text</body></html>', { status: 200 }),
+      normalizer: async () => ({
+        title: 'Remote Recipe',
+        ingredients: ['1 squash'],
+        instructions: ['Roast it.'],
+        prepTime: 'PT15M',
+        cookTime: 'PT1H5M',
+      }),
+    });
+
+    expect(draft.prepTime).toBe('15 mins');
+    expect(draft.cookTime).toBe('1 hour 5 mins');
   });
 
   it('extracts an Instagram reel caption into a reviewable recipe draft', async () => {
@@ -217,5 +248,30 @@ describe('importRecipeFromUrl', () => {
     expect(draft.title).toBe('Banh Mi Bowls');
     expect(draft.ingredients).toEqual(['1 lb ground chicken', '1 cup shredded carrots']);
     expect(draft.instructions).toEqual(['Cook the chicken.', 'Assemble the bowls.']);
+  });
+
+  it('throws a friendly error when AI determines the content is not a recipe', async () => {
+    const normalizer = jest.fn(async () => ({
+      isRecipe: false,
+      error: 'This link does not appear to contain a recipe.',
+    }));
+
+    await expect(
+      importRecipeFromUrl('https://www.instagram.com/reel/baseball-highlights/', {
+        fetcher: async () =>
+          new Response(
+            `
+              <html>
+                <head>
+                  <meta property="og:title" content="Baseball Highlights" />
+                  <meta property="og:description" content="Fastball, strikeout, scoreboard, walk-off reactions." />
+                </head>
+              </html>
+            `,
+            { status: 200 }
+          ),
+        normalizer,
+      })
+    ).rejects.toThrow('This link does not appear to contain a recipe.');
   });
 });

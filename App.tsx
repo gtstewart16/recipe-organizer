@@ -1,12 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   Alert,
+  AppState,
   Linking,
-  Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,17 +17,38 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { CloudSyncStatus } from './src/components/CloudSyncStatus';
+import { InteractivePressable } from './src/components/InteractivePressable';
+import { AddRecipeScreen, type EditableReviewDraft } from './src/components/add-recipe';
+import { GroupsScreen } from './src/components/groups';
+import { RecipeDetailScreen } from './src/components/recipe-detail/RecipeDetailScreen';
+import { RecipesHome } from './src/components/recipes-home';
+import { SettingsScreen } from './src/components/settings';
+import { clearAuthSession, loadAuthSession, persistAuthSession } from './src/lib/auth-session';
+import { createSharedImportFromDeepLink } from './src/features/shared-imports/deep-link';
+import { processPendingSharedImport } from './src/features/shared-imports/processor';
+import { sharedImportStore } from './src/features/shared-imports/store';
+import { markSharedImportDuplicate, type PendingSharedImport } from './src/features/shared-imports/types';
+import { formatRecipeDuration } from './src/lib/duration';
+import type { ImportFeedbackSourceType } from './src/lib/import-feedback';
+import { createRecipeBookRepository, createSupabaseRecipeBookPersistence } from './src/lib/recipe-book-repository';
+import { parseMultilineList } from './src/lib/recipe-text';
+import { supabase } from './src/lib/supabase';
 import { importRecipeFromPhoto } from './src/services/photo-import';
 import { importRecipeFromUrl } from './src/services/url-import';
 import {
   createEmptyRecipeBookState,
   createRecipeBookDraftFromUrl,
+  ImportJob,
   RecipeBookState,
   RecipeDraft,
+  RecipeGroup,
   RecipeRecord,
   recipeBookReducer,
   selectFilteredRecipes,
+  selectImportHistory,
 } from './src/store/recipe-book';
+import { colors, radius, shadows, spacing, type } from './src/theme';
 
 const STORAGE_KEY = 'recipe-organizer-state-v1';
 
@@ -36,18 +59,26 @@ const initialSeedState = seedRecipeBookState();
 
 type TabId = 'recipes' | 'groups' | 'add';
 
-type EditableReviewDraft = RecipeDraft & {
-  selectedGroupIds: string[];
+type StoredPhotoAsset = {
+  uri: string;
+  mimeType?: string;
+  base64?: string | null;
 };
 
 export default function App() {
   const isTestEnv = process.env.NODE_ENV === 'test';
+  const cloudRepository = useMemo(
+    () => (supabase ? createRecipeBookRepository(createSupabaseRecipeBookPersistence(supabase)) : null),
+    []
+  );
   const [state, dispatch] = useReducer(recipeBookReducer, initialSeedState);
-  const [hydrated, setHydrated] = useState(isTestEnv);
+  const [authHydrated, setAuthHydrated] = useState(false);
+  const [hydrated, setHydrated] = useState(isTestEnv || !cloudRepository);
   const [signedIn, setSignedIn] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('recipes');
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [householdEmail, setHouseholdEmail] = useState(HOUSEHOLD_EMAIL);
   const [householdPassword, setHouseholdPassword] = useState(HOUSEHOLD_PASSWORD);
@@ -59,10 +90,54 @@ export default function App() {
   const [isImportingUrl, setIsImportingUrl] = useState(false);
   const [isImportingPhoto, setIsImportingPhoto] = useState(false);
   const [reviewDraft, setReviewDraft] = useState<EditableReviewDraft | null>(null);
+  const [activeImportJobId, setActiveImportJobId] = useState<string | null>(null);
+  const [sharedImports, setSharedImports] = useState<PendingSharedImport[]>([]);
+  const [activeSharedImportId, setActiveSharedImportId] = useState<string | null>(null);
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [lastImportSourceType, setLastImportSourceType] = useState<ImportFeedbackSourceType | null>(null);
+  const [lastPhotoMode, setLastPhotoMode] = useState<'camera' | 'library'>('library');
+  const previousRefreshTargetRef = useRef<string | null>(null);
+  const skipNextAutoRefreshTargetRef = useRef<string | null>(null);
+  const didHandleInitialUrlRef = useRef(false);
+  const lastAppStateRef = useRef(AppState.currentState);
+
+  const markCloudSyncSuccess = () => {
+    setLastSyncedAt(new Date().toISOString());
+    setRefreshError(null);
+    setSyncError(null);
+  };
 
   useEffect(() => {
-    if (isTestEnv) {
+    let mounted = true;
+
+    loadAuthSession()
+      .then((hasSession) => {
+        if (mounted) {
+          setSignedIn(hasSession);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setSignedIn(false);
+        }
+      })
+      .finally(() => {
+        if (mounted) {
+          setAuthHydrated(true);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isTestEnv || cloudRepository) {
       return;
     }
 
@@ -89,28 +164,400 @@ export default function App() {
     return () => {
       mounted = false;
     };
-  }, [isTestEnv]);
+  }, [cloudRepository, isTestEnv]);
 
   useEffect(() => {
-    if (!hydrated) {
+    if (!hydrated || cloudRepository) {
       return;
     }
 
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch(() => {
       // Ignore local persistence failures and keep the in-memory session usable.
     });
-  }, [hydrated, state]);
+  }, [cloudRepository, hydrated, state]);
+
+  useEffect(() => {
+    if (!signedIn || !cloudRepository) {
+      return;
+    }
+
+    let mounted = true;
+    if (!isTestEnv) {
+      setHydrated(false);
+    }
+    setSyncError(null);
+
+    const load = async () => {
+      try {
+        const nextState = await cloudRepository.loadState();
+        if (mounted) {
+          dispatch({ type: 'state/hydrated', payload: nextState });
+          markCloudSyncSuccess();
+        }
+      } catch (error) {
+        if (mounted) {
+          const message =
+            error instanceof Error ? error.message : 'We could not load your shared cloud library right now.';
+          setSyncError(message);
+          setRefreshError(message);
+        }
+      } finally {
+        if (mounted && !isTestEnv) {
+          setHydrated(true);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      mounted = false;
+    };
+  }, [cloudRepository, isTestEnv, signedIn]);
+
+  const refreshTarget = activeTab === 'add' && reviewDraft ? 'add-review' : activeTab;
+
+  const reloadCloudState = async ({ showRefreshing = false }: { showRefreshing?: boolean } = {}) => {
+    if (!cloudRepository) {
+      return;
+    }
+
+    if (showRefreshing) {
+      setIsRefreshing(true);
+    }
+
+    try {
+      const nextState = await cloudRepository.loadState();
+      dispatch({ type: 'state/hydrated', payload: nextState });
+      markCloudSyncSuccess();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'We could not refresh your shared library.';
+      setRefreshError(message);
+      setSyncError(message);
+    } finally {
+      if (showRefreshing) {
+        setIsRefreshing(false);
+      }
+    }
+  };
+
+  const showSyncIssue = () => {
+    const message = refreshError ?? syncError ?? 'We could not refresh your shared library.';
+    const title = refreshError ? 'Refresh paused' : 'Sync paused';
+
+    Alert.alert(title, message, [
+      { text: 'Not now', style: 'cancel' },
+      { text: 'Try again', onPress: () => void reloadCloudState({ showRefreshing: true }) },
+    ]);
+  };
+
+  useEffect(() => {
+    const previousRefreshTarget = previousRefreshTargetRef.current;
+    previousRefreshTargetRef.current = refreshTarget;
+
+    if (!signedIn || !cloudRepository || !hydrated || !previousRefreshTarget || previousRefreshTarget === refreshTarget) {
+      return;
+    }
+
+    if (refreshTarget === 'add-review') {
+      return;
+    }
+
+    if (skipNextAutoRefreshTargetRef.current === refreshTarget) {
+      skipNextAutoRefreshTargetRef.current = null;
+      return;
+    }
+
+    void reloadCloudState();
+  }, [cloudRepository, hydrated, refreshTarget, signedIn]);
+
+  useEffect(() => {
+    if (!signedIn || !cloudRepository) {
+      return;
+    }
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      const wasBackgrounded = /inactive|background/.test(lastAppStateRef.current);
+      lastAppStateRef.current = nextAppState;
+
+      if (!wasBackgrounded || nextAppState !== 'active' || !hydrated || refreshTarget === 'add-review') {
+        return;
+      }
+
+      void reloadCloudState();
+    });
+
+    return () => {
+      subscription?.remove?.();
+    };
+  }, [cloudRepository, hydrated, refreshTarget, signedIn]);
 
   const visibleRecipes = useMemo(() => selectFilteredRecipes(state, searchQuery), [searchQuery, state]);
+  const importHistory = useMemo(() => selectImportHistory(state), [state]);
+  const favoriteGroups = useMemo(
+    () => state.groups.filter((group) => group.isFavorite).sort((left, right) => left.name.localeCompare(right.name)),
+    [state.groups]
+  );
+  const orderedGroups = useMemo(
+    () =>
+      [...state.groups].sort((left, right) => {
+        if (Boolean(left.isFavorite) !== Boolean(right.isFavorite)) {
+          return Number(Boolean(right.isFavorite)) - Number(Boolean(left.isFavorite));
+        }
+
+        return left.name.localeCompare(right.name);
+      }),
+    [state.groups]
+  );
   const selectedRecipe = state.recipes.find((recipe) => recipe.id === selectedRecipeId) ?? null;
   const selectedGroup = state.groups.find((group) => group.id === selectedGroupId) ?? null;
+  const selectedRecipeGroupNames = useMemo(() => {
+    if (!selectedRecipe) {
+      return [];
+    }
+
+    return state.memberships
+      .filter((membership) => membership.recipeId === selectedRecipe.id)
+      .map((membership) => state.groups.find((group) => group.id === membership.groupId)?.name)
+      .filter((groupName): groupName is string => Boolean(groupName));
+  }, [selectedRecipe, state.groups, state.memberships]);
   const groupedRecipeCount = (groupId: string) =>
     state.memberships.filter((membership) => membership.groupId === groupId).length;
+
+  const sortSharedImports = (items: PendingSharedImport[]) =>
+    [...items].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
+  const persistImportJob = async (job: ImportJob) => {
+    try {
+      if (cloudRepository) {
+        const nextState = await cloudRepository.upsertImportJob(job);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
+      } else {
+        dispatch({ type: 'importJob/upserted', payload: job });
+        setSyncError(null);
+      }
+    } catch (error) {
+      if (job.status !== 'saved') {
+        setSyncError(error instanceof Error ? error.message : 'We could not update that import draft right now.');
+      }
+    }
+  };
+
+  const refreshSharedImports = useCallback(async () => {
+    try {
+      const records = await sharedImportStore.list();
+      setSharedImports(sortSharedImports(records));
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'We could not load shared imports.');
+    }
+  }, []);
+
+  const refreshAndProcessSharedImports = useCallback(async () => {
+    try {
+      const records = await sharedImportStore.list();
+      const processedRecords = await Promise.all(
+        records.map((record) =>
+          record.status === 'pending' || record.status === 'processing'
+            ? processPendingSharedImport({ ...record, status: 'processing' })
+            : record
+        )
+      );
+      const changedRecords = processedRecords.filter(
+        (record, index) => JSON.stringify(record) !== JSON.stringify(records[index])
+      );
+
+      for (const record of changedRecords) {
+        await sharedImportStore.replaceExisting(record);
+      }
+
+      await refreshSharedImports();
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'We could not process shared imports.');
+    }
+  }, [refreshSharedImports]);
+
+  const openSharedImportForReview = useCallback(
+    async (record: PendingSharedImport) => {
+      if (record.status === 'duplicate' && record.recipeId) {
+        setImportError(null);
+        setSelectedRecipeId(record.recipeId);
+        return;
+      }
+
+      if (!record.draft) {
+        setImportError('This shared import is not ready to review yet.');
+        setActiveTab('add');
+        return;
+      }
+
+      const selectedGroupIds = readSelectedGroupIds(record.draft);
+      const reviewImportDraft = { ...record.draft, selectedGroupIds };
+      const timestamp = new Date().toISOString();
+      const existingJob =
+        record.draft.sourceType === 'url'
+          ? state.importJobs.find(
+              (job) =>
+                job.status === 'in_review' &&
+                job.sourceType === 'url' &&
+                job.sourceUrl === record.draft?.sourceUrl
+            )
+          : undefined;
+      const jobId =
+        record.draft.sourceType === 'url' || record.draft.sourceType === 'photo'
+          ? existingJob?.id ?? createImportJobId()
+          : null;
+
+      setImportError(null);
+      setActiveSharedImportId(record.id);
+      setActiveImportJobId(jobId);
+      setEditingRecipeId(null);
+      setReviewDraft(reviewImportDraft);
+      setActiveTab('add');
+
+      if (jobId && (record.draft.sourceType === 'url' || record.draft.sourceType === 'photo')) {
+        await persistImportJob({
+          id: jobId,
+          sourceType: record.draft.sourceType,
+          sourceUrl: record.draft.sourceUrl,
+          sourcePhotoUris: record.draft.sourcePhotoUris,
+          title: record.draft.title.trim() || 'Imported Recipe',
+          status: 'in_review',
+          draft: reviewImportDraft,
+          createdAt: existingJob?.createdAt ?? timestamp,
+          updatedAt: timestamp,
+        });
+      }
+    },
+    [state.importJobs]
+  );
+
+  const handleSharedImportDeepLink = useCallback(
+    async (url: string) => {
+      const record = createSharedImportFromDeepLink(url);
+
+      if (!record) {
+        return;
+      }
+
+      try {
+        const existingRecipe = findExistingRecipeForSharedImport(record, state.recipes);
+
+        if (existingRecipe) {
+          const duplicateRecord = markSharedImportDuplicate(record, {
+            recipeId: existingRecipe.id,
+            title: existingRecipe.title,
+          });
+          const queuedRecord = await sharedImportStore.enqueue(duplicateRecord);
+          const recordToShow =
+            queuedRecord.status === 'duplicate' && queuedRecord.recipeId
+              ? queuedRecord
+              : { ...queuedRecord, ...duplicateRecord, id: queuedRecord.id };
+
+          if (recordToShow !== queuedRecord) {
+            await sharedImportStore.save(recordToShow);
+          }
+
+          setImportError(null);
+          setActiveTab('add');
+          await refreshSharedImports();
+          return;
+        }
+
+        const processingRecord = { ...record, status: 'processing' as const };
+        const queuedRecord = await sharedImportStore.enqueue(processingRecord);
+        setImportError(null);
+        setActiveTab('add');
+        await refreshSharedImports();
+        const processedRecord = await processPendingSharedImport(
+          queuedRecord.status === 'processing' || queuedRecord.status === 'pending'
+            ? queuedRecord
+            : processingRecord
+        );
+        await sharedImportStore.replaceExisting(processedRecord);
+        await refreshSharedImports();
+
+        if (processedRecord.status === 'ready') {
+          await openSharedImportForReview(processedRecord);
+        }
+      } catch (error) {
+        setImportError(error instanceof Error ? error.message : 'We could not queue that shared import.');
+        setActiveTab('add');
+      }
+    },
+    [openSharedImportForReview, refreshSharedImports, state.recipes]
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!didHandleInitialUrlRef.current) {
+      didHandleInitialUrlRef.current = true;
+      Linking.getInitialURL()
+        .then((url) => {
+          if (mounted && url) {
+            void handleSharedImportDeepLink(url);
+          }
+        })
+        .catch(() => {
+          // Ignore malformed or unavailable launch links.
+        });
+    }
+
+    const subscription = Linking.addEventListener('url', (event) => {
+      void handleSharedImportDeepLink(event.url);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, [handleSharedImportDeepLink]);
+
+  useEffect(() => {
+    if (!signedIn || !hydrated || activeTab !== 'add' || reviewDraft) {
+      return;
+    }
+
+    void refreshAndProcessSharedImports();
+  }, [activeTab, hydrated, refreshAndProcessSharedImports, reviewDraft, signedIn]);
+
+  const resetSignedInShellState = () => {
+    previousRefreshTargetRef.current = null;
+    skipNextAutoRefreshTargetRef.current = null;
+    lastAppStateRef.current = AppState.currentState;
+    setActiveTab('recipes');
+    setSelectedRecipeId(null);
+    setSelectedGroupId(null);
+    setIsSettingsOpen(false);
+    setSearchQuery('');
+    setSignInError(null);
+    setNewGroupName('');
+    setRenameGroupName('');
+    setUrlInput('');
+    setImportError(null);
+    setIsImportingUrl(false);
+    setIsImportingPhoto(false);
+    setReviewDraft(null);
+    setActiveImportJobId(null);
+    setSharedImports([]);
+    setActiveSharedImportId(null);
+    setEditingRecipeId(null);
+    setSyncError(null);
+    setRefreshError(null);
+    setIsRefreshing(false);
+    setLastSyncedAt(null);
+    setLastImportSourceType(null);
+    setLastPhotoMode('library');
+  };
 
   const handleSignIn = () => {
     if (householdEmail === HOUSEHOLD_EMAIL && householdPassword === HOUSEHOLD_PASSWORD) {
       setSignedIn(true);
       setSignInError(null);
+      void persistAuthSession().catch(() => {
+        // Keep the in-memory session usable even if persistence is unavailable.
+      });
       return;
     }
 
@@ -119,25 +566,49 @@ export default function App() {
       return;
     }
 
-    setSignedIn(true);
-    setSignInError(null);
+    setSignedIn(false);
+    setSignInError('Use the shared household email and password.');
   };
 
-  const handleCreateGroup = () => {
+  const handleSignOut = async () => {
+    try {
+      await clearAuthSession();
+      resetSignedInShellState();
+      setSignedIn(false);
+    } catch {
+      Alert.alert('Could not sign out', 'Please try again in a moment.');
+    }
+  };
+
+  const handleCreateGroup = async () => {
     const trimmed = newGroupName.trim();
 
     if (!trimmed) {
       return;
     }
 
-    dispatch({
-      type: 'group/created',
-      payload: { id: `group-${Date.now()}`, name: trimmed },
-    });
-    setNewGroupName('');
+    try {
+      if (cloudRepository) {
+        const nextState = await cloudRepository.createGroup(trimmed);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
+      } else {
+        dispatch({
+          type: 'group/created',
+          payload: { id: `group-${Date.now()}`, name: trimmed },
+        });
+      }
+
+      setNewGroupName('');
+      if (!cloudRepository) {
+        setSyncError(null);
+      }
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'We could not create that group.');
+    }
   };
 
-  const handleRenameGroup = () => {
+  const handleRenameGroup = async () => {
     if (!selectedGroup) {
       return;
     }
@@ -147,54 +618,140 @@ export default function App() {
       return;
     }
 
-    dispatch({
-      type: 'group/renamed',
-      payload: { id: selectedGroup.id, name: trimmed },
-    });
-    setRenameGroupName('');
+    try {
+      if (cloudRepository) {
+        const nextState = await cloudRepository.renameGroup(selectedGroup.id, trimmed);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
+      } else {
+        dispatch({
+          type: 'group/renamed',
+          payload: { id: selectedGroup.id, name: trimmed },
+        });
+      }
+
+      setRenameGroupName('');
+      if (!cloudRepository) {
+        setSyncError(null);
+      }
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'We could not rename that group.');
+    }
   };
 
-  const beginUrlReview = async () => {
-    if (!urlInput.trim()) {
+  const startUrlReview = async ({
+    sourceUrl,
+    existingJobId,
+  }: {
+    sourceUrl: string;
+    existingJobId?: string;
+  }) => {
+    const trimmedUrl = sourceUrl.trim();
+
+    if (!trimmedUrl) {
       Alert.alert('Add a link', 'Paste a recipe URL to create a review draft.');
       return;
     }
 
+    setLastImportSourceType('url');
     setImportError(null);
     setIsImportingUrl(true);
 
     try {
-      const draft = await importRecipeFromUrl(urlInput.trim());
+      const draft = await importRecipeFromUrl(trimmedUrl);
+      const jobId = existingJobId ?? createImportJobId();
+      const timestamp = new Date().toISOString();
+      const existingJob = state.importJobs.find((job) => job.id === jobId);
+
+      setUrlInput(trimmedUrl);
+      setActiveImportJobId(jobId);
+      setActiveSharedImportId(null);
       setReviewDraft({ ...draft, selectedGroupIds: [] });
+      await persistImportJob({
+        id: jobId,
+        sourceType: 'url',
+        sourceUrl: trimmedUrl,
+        sourcePhotoUris: [],
+        title: draft.title.trim() || createRecipeBookDraftFromUrl(trimmedUrl).title,
+        status: 'in_review',
+        draft,
+        createdAt: existingJob?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      });
     } catch (error) {
-      setImportError(
+      const message =
         error instanceof Error
           ? error.message
-          : 'We could not parse that recipe link. Try another page or use manual edits after import.'
+          : 'We could not parse that recipe link. Try another page or use manual edits after import.';
+      const jobId = existingJobId ?? createImportJobId();
+      const existingJob = state.importJobs.find((job) => job.id === jobId);
+
+      setImportError(
+        message
       );
+      setActiveImportJobId(null);
+      const fallbackDraft = createRecipeBookDraftFromUrl(trimmedUrl);
+      const timestamp = new Date().toISOString();
+      await persistImportJob({
+        id: jobId,
+        sourceType: 'url',
+        sourceUrl: trimmedUrl,
+        sourcePhotoUris: [],
+        title: fallbackDraft.title,
+        status: 'failed',
+        errorMessage: message,
+        createdAt: existingJob?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      });
     } finally {
       setIsImportingUrl(false);
     }
   };
 
-  const beginPhotoReview = async (mode: 'camera' | 'library') => {
+  const beginUrlReview = async () => {
+    const trimmedUrl = urlInput.trim();
+
+    if (createSharedImportFromDeepLink(trimmedUrl)) {
+      await handleSharedImportDeepLink(trimmedUrl);
+      setUrlInput('');
+      return;
+    }
+
+    await startUrlReview({ sourceUrl: urlInput });
+  };
+
+  const beginPhotoReview = async (mode: 'camera' | 'library', existingJobId?: string) => {
+    setLastImportSourceType('photo');
+    setLastPhotoMode(mode);
     setImportError(null);
     setIsImportingPhoto(true);
 
-    const result =
-      mode === 'camera'
-        ? await ImagePicker.launchCameraAsync({
-            allowsEditing: false,
-            base64: true,
-            quality: 0.8,
-          })
-        : await ImagePicker.launchImageLibraryAsync({
-            allowsEditing: false,
-            allowsMultipleSelection: true,
-            base64: true,
-            mediaTypes: ['images'],
-            quality: 0.8,
-          });
+    let result: ImagePicker.ImagePickerResult;
+
+    try {
+      result =
+        mode === 'camera'
+          ? await ImagePicker.launchCameraAsync({
+              allowsEditing: false,
+              base64: true,
+              quality: 0.8,
+            })
+          : await ImagePicker.launchImageLibraryAsync({
+              allowsEditing: false,
+              allowsMultipleSelection: true,
+              base64: true,
+              mediaTypes: ['images'],
+              quality: 0.8,
+            });
+    } catch (error) {
+      setImportError(
+        error instanceof Error
+          ? error.message
+          : 'We could not open your photo picker. Try again in a moment.'
+      );
+      setIsImportingPhoto(false);
+      return;
+    }
 
     if (result.canceled || result.assets.length === 0) {
       setIsImportingPhoto(false);
@@ -209,20 +766,207 @@ export default function App() {
           base64: asset.base64,
         }))
       );
+      const jobId = existingJobId ?? createImportJobId();
+      const timestamp = new Date().toISOString();
+      const existingJob = state.importJobs.find((job) => job.id === jobId);
 
+      setActiveImportJobId(jobId);
+      setActiveSharedImportId(null);
       setReviewDraft({ ...draft, selectedGroupIds: [] });
+      await persistImportJob({
+        id: jobId,
+        sourceType: 'photo',
+        sourcePhotoUris: draft.sourcePhotoUris,
+        title: draft.title.trim() || 'Cookbook Recipe Draft',
+        status: 'in_review',
+        draft,
+        createdAt: existingJob?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      });
     } catch (error) {
-      setImportError(
+      const message =
         error instanceof Error
           ? error.message
-          : 'We could not parse that cookbook photo. Try another image or review the draft manually.'
+          : 'We could not parse that cookbook photo. Try another image or review the draft manually.';
+
+      setImportError(
+        message
       );
+      setActiveImportJobId(null);
+      const timestamp = new Date().toISOString();
+      const jobId = existingJobId ?? createImportJobId();
+      const existingJob = state.importJobs.find((job) => job.id === jobId);
+      await persistImportJob({
+        id: jobId,
+        sourceType: 'photo',
+        sourcePhotoUris: result.assets.map((asset) => asset.uri),
+        title: 'Cookbook Recipe Draft',
+        status: 'failed',
+        errorMessage: message,
+        createdAt: existingJob?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      });
     } finally {
       setIsImportingPhoto(false);
     }
   };
 
-  const handleSaveRecipe = () => {
+  const retryPhotoImportJob = async (job: ImportJob) => {
+    if (job.sourcePhotoUris.length === 0) {
+      Alert.alert('Cannot retry import', 'This saved import no longer has its original cookbook photo.');
+      return;
+    }
+
+    setLastImportSourceType('photo');
+    setImportError(null);
+    setIsImportingPhoto(true);
+
+    try {
+      const storedAssets = await readStoredPhotoAssets(job.sourcePhotoUris);
+
+      if (storedAssets.length === 0) {
+        Alert.alert('Cannot retry import', 'This saved import no longer has a readable cookbook photo.');
+        return;
+      }
+
+      const draft = await importRecipeFromPhoto(storedAssets);
+      const timestamp = new Date().toISOString();
+      const sourcePhotoUris = draft.sourcePhotoUris.length > 0 ? draft.sourcePhotoUris : job.sourcePhotoUris;
+      const reviewImportDraft = {
+        ...draft,
+        sourcePhotoUris,
+        selectedGroupIds: job.draft?.selectedGroupIds ?? [],
+      };
+
+      setActiveImportJobId(job.id);
+      setEditingRecipeId(null);
+      setReviewDraft(reviewImportDraft);
+      setActiveTab('add');
+      await persistImportJob({
+        id: job.id,
+        sourceType: 'photo',
+        sourcePhotoUris,
+        title: draft.title.trim() || job.title || 'Cookbook Recipe Draft',
+        status: 'in_review',
+        draft: reviewImportDraft,
+        createdAt: job.createdAt,
+        updatedAt: timestamp,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'We could not parse that cookbook photo. Try another image or review the draft manually.';
+      const timestamp = new Date().toISOString();
+
+      setImportError(message);
+      setActiveImportJobId(null);
+      await persistImportJob({
+        ...job,
+        status: 'failed',
+        errorMessage: message,
+        updatedAt: timestamp,
+      });
+    } finally {
+      setIsImportingPhoto(false);
+    }
+  };
+
+  const persistActiveReviewDraft = async (draft: EditableReviewDraft) => {
+    if (activeSharedImportId) {
+      const existingShare = sharedImports.find((item) => item.id === activeSharedImportId);
+
+      if (existingShare) {
+        await sharedImportStore.save({
+          ...existingShare,
+          status: 'ready',
+          draft,
+          errorMessage: undefined,
+          updatedAt: new Date().toISOString(),
+        });
+        await refreshSharedImports();
+      }
+
+      return;
+    }
+
+    if (!activeImportJobId || (draft.sourceType !== 'url' && draft.sourceType !== 'photo')) {
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+    const existingJob = state.importJobs.find((job) => job.id === activeImportJobId);
+
+    await persistImportJob({
+      id: activeImportJobId,
+      sourceType: draft.sourceType,
+      sourceUrl: draft.sourceUrl?.trim(),
+      sourcePhotoUris: draft.sourcePhotoUris,
+      title: draft.title.trim() || existingJob?.title || 'Imported Recipe',
+      status: 'in_review',
+      draft,
+      createdAt: existingJob?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+    });
+  };
+
+  const handleTabPress = (nextTab: TabId) => {
+    if (activeTab === nextTab) {
+      return;
+    }
+
+    const draftToPersist = reviewDraft;
+
+    if (activeTab === 'add' && draftToPersist) {
+      void (async () => {
+        await persistActiveReviewDraft(draftToPersist);
+        skipNextAutoRefreshTargetRef.current = nextTab;
+        setActiveTab(nextTab);
+      })();
+      return;
+    }
+
+    if (nextTab === 'add' && !draftToPersist) {
+      void refreshAndProcessSharedImports();
+    }
+
+    setActiveTab(nextTab);
+  };
+
+  const handleOpenSharedImport = (id: string) => {
+    const match = sharedImports.find((item) => item.id === id);
+
+    if (!match) {
+      setImportError('This shared import is not ready to review yet.');
+      return;
+    }
+
+    void openSharedImportForReview(match);
+  };
+
+  const handleRetrySharedImport = async (id: string) => {
+    const match = sharedImports.find((item) => item.id === id);
+
+    if (!match) {
+      return;
+    }
+
+    const nextRecord = await processPendingSharedImport({
+      ...match,
+      status: 'pending',
+      errorMessage: undefined,
+    });
+
+    await sharedImportStore.save(nextRecord);
+    await refreshSharedImports();
+  };
+
+  const handleDismissSharedImport = async (id: string) => {
+    await sharedImportStore.remove(id);
+    await refreshSharedImports();
+  };
+
+  const handleSaveRecipe = async () => {
     if (!reviewDraft) {
       return;
     }
@@ -237,6 +981,8 @@ export default function App() {
       ingredients: parseMultilineList(reviewDraft.ingredients.join('\n')),
       instructions: parseMultilineList(reviewDraft.instructions.join('\n')),
       servings: reviewDraft.servings?.trim(),
+      prepTime: formatRecipeDuration(reviewDraft.prepTime),
+      cookTime: formatRecipeDuration(reviewDraft.cookTime),
       status: 'ready' as const,
     };
 
@@ -245,30 +991,104 @@ export default function App() {
       return;
     }
 
-    if (editingRecipeId) {
-      dispatch({
-        type: 'recipe/updated',
-        payload: {
-          recipeId: editingRecipeId,
-          draft: normalizedDraft,
-          groupIds: reviewDraft.selectedGroupIds,
+    let savedRecipeId: string | undefined;
+
+    try {
+      if (cloudRepository) {
+        const previousRecipeIds = new Set(state.recipes.map((recipe) => recipe.id));
+        const nextState = editingRecipeId
+          ? await cloudRepository.updateRecipe(editingRecipeId, normalizedDraft, reviewDraft.selectedGroupIds)
+          : await cloudRepository.importRecipe(normalizedDraft, reviewDraft.selectedGroupIds);
+
+        dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
+        savedRecipeId =
+          editingRecipeId ??
+          findSavedRecipeId(nextState.recipes, previousRecipeIds, normalizedDraft);
+      } else if (editingRecipeId) {
+        dispatch({
+          type: 'recipe/updated',
+          payload: {
+            recipeId: editingRecipeId,
+            draft: normalizedDraft,
+            groupIds: reviewDraft.selectedGroupIds,
+          },
+        });
+        savedRecipeId = editingRecipeId;
+      } else {
+        dispatch({
+          type: 'recipe/imported',
+          payload: {
+            draft: normalizedDraft,
+            groupIds: reviewDraft.selectedGroupIds,
+          },
+        });
+      }
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'We could not save that recipe.');
+      return;
+    }
+
+    if (activeImportJobId && (reviewDraft.sourceType === 'url' || reviewDraft.sourceType === 'photo')) {
+      const timestamp = new Date().toISOString();
+      const existingJob = state.importJobs.find((job) => job.id === activeImportJobId);
+
+      await persistImportJob({
+        id: activeImportJobId,
+        sourceType: reviewDraft.sourceType,
+        sourceUrl: normalizedDraft.sourceUrl,
+        sourcePhotoUris: normalizedDraft.sourcePhotoUris,
+        title: normalizedDraft.title,
+        status: 'saved',
+        draft: {
+          ...normalizedDraft,
+          selectedGroupIds: reviewDraft.selectedGroupIds,
         },
-      });
-    } else {
-      dispatch({
-        type: 'recipe/imported',
-        payload: {
-          draft: normalizedDraft,
-          groupIds: reviewDraft.selectedGroupIds,
-        },
+        recipeId: savedRecipeId,
+        createdAt: existingJob?.createdAt ?? timestamp,
+        updatedAt: timestamp,
       });
     }
 
+    if (activeSharedImportId && !activeImportJobId && (reviewDraft.sourceType === 'url' || reviewDraft.sourceType === 'photo')) {
+      const timestamp = new Date().toISOString();
+
+      await persistImportJob({
+        id: createImportJobId(),
+        sourceType: reviewDraft.sourceType,
+        sourceUrl: normalizedDraft.sourceUrl,
+        sourcePhotoUris: normalizedDraft.sourcePhotoUris,
+        title: normalizedDraft.title,
+        status: 'saved',
+        draft: {
+          ...normalizedDraft,
+          selectedGroupIds: reviewDraft.selectedGroupIds,
+        },
+        recipeId: savedRecipeId,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+    }
+
+    if (activeSharedImportId) {
+      try {
+        await sharedImportStore.remove(activeSharedImportId);
+        await refreshSharedImports();
+      } catch {
+        // Queue cleanup should not strand the user after the recipe is already saved.
+      }
+    }
+
     setReviewDraft(null);
+    setActiveImportJobId(null);
+    setActiveSharedImportId(null);
     setEditingRecipeId(null);
     setUrlInput('');
+    setImportError(null);
     setSelectedGroupId(reviewDraft.selectedGroupIds[0] ?? null);
-    setActiveTab(reviewDraft.selectedGroupIds.length > 0 ? 'groups' : 'recipes');
+    const nextTab = reviewDraft.selectedGroupIds.length > 0 ? 'groups' : 'recipes';
+    skipNextAutoRefreshTargetRef.current = nextTab;
+    setActiveTab(nextTab);
   };
 
   const beginRecipeEdit = (recipe: RecipeRecord) => {
@@ -286,27 +1106,197 @@ export default function App() {
       ingredients: recipe.ingredients,
       instructions: recipe.instructions,
       servings: recipe.servings,
+      prepTime: recipe.prepTime,
+      cookTime: recipe.cookTime,
       status: recipe.status,
       selectedGroupIds,
     });
     setEditingRecipeId(recipe.id);
+    setActiveSharedImportId(null);
+    setActiveImportJobId(null);
     setSelectedRecipeId(null);
     setActiveTab('add');
   };
 
-  const handleDeleteRecipe = (recipeId: string) => {
-    dispatch({
-      type: 'recipe/deleted',
-      payload: { recipeId },
-    });
-    setSelectedRecipeId(null);
+  const handleDeleteRecipe = async (recipeId: string) => {
+    try {
+      if (cloudRepository) {
+        const nextState = await cloudRepository.deleteRecipe(recipeId);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
+      } else {
+        dispatch({
+          type: 'recipe/deleted',
+          payload: { recipeId },
+        });
+      }
+
+      setSelectedRecipeId(null);
+      if (!cloudRepository) {
+        setSyncError(null);
+      }
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'We could not delete that recipe.');
+    }
   };
+
+  const confirmDeleteRecipe = (recipe: RecipeRecord) => {
+    Alert.alert(
+      'Delete recipe?',
+      `Are you sure you want to delete “${recipe.title}”? This will remove it from your shared library.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void handleDeleteRecipe(recipe.id);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    try {
+      if (cloudRepository) {
+        const nextState = await cloudRepository.deleteGroup(groupId);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
+      } else {
+        dispatch({ type: 'group/deleted', payload: { id: groupId } });
+      }
+
+      if (selectedGroupId === groupId) {
+        setSelectedGroupId(null);
+      }
+      if (!cloudRepository) {
+        setSyncError(null);
+      }
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'We could not delete that group.');
+    }
+  };
+
+  const confirmDeleteGroup = (group: RecipeGroup) => {
+    Alert.alert(
+      'Delete group?',
+      `Are you sure you want to delete “${group.name}”? Recipes will stay saved, but they will be removed from this group.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void handleDeleteGroup(group.id);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleToggleGroupFavorite = async (group: RecipeGroup) => {
+    const nextIsFavorite = !group.isFavorite;
+
+    try {
+      if (cloudRepository) {
+        const nextState = await cloudRepository.setGroupFavorite(group.id, nextIsFavorite);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
+      } else {
+        dispatch({
+          type: 'group/favoriteToggled',
+          payload: { id: group.id, isFavorite: nextIsFavorite },
+        });
+        setSyncError(null);
+      }
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'We could not update that favorite group.');
+    }
+  };
+
+  const handleRetryImport = () => {
+    if (lastImportSourceType === 'url') {
+      void beginUrlReview();
+      return;
+    }
+
+    if (lastImportSourceType === 'photo') {
+      void beginPhotoReview(lastPhotoMode);
+    }
+  };
+
+  const handleRetryImportJob = (job: ImportJob) => {
+    setImportError(null);
+
+    if (job.sourceType === 'url') {
+      if (!job.sourceUrl) {
+        Alert.alert('Cannot retry import', 'This saved import no longer has its original recipe link.');
+        return;
+      }
+
+      void startUrlReview({ sourceUrl: job.sourceUrl, existingJobId: job.id });
+      return;
+    }
+
+    void retryPhotoImportJob(job);
+  };
+
+  const handleResumeImportJob = (job: ImportJob) => {
+    if (!job.draft) {
+      Alert.alert('Cannot resume import', 'This import draft no longer has review details saved.');
+      return;
+    }
+
+    setImportError(null);
+    setActiveImportJobId(job.id);
+    setActiveSharedImportId(null);
+    setEditingRecipeId(null);
+    setReviewDraft({ ...job.draft, selectedGroupIds: job.draft.selectedGroupIds ?? [] });
+    setActiveTab('add');
+  };
+
+  const handleOpenImportRecipe = (job: ImportJob) => {
+    if (!job.recipeId) {
+      Alert.alert('Recipe unavailable', 'This saved import is no longer linked to a recipe.');
+      return;
+    }
+
+    setSelectedRecipeId(job.recipeId);
+  };
+
+  if (isSettingsOpen) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="dark" />
+        <SettingsScreen onClose={() => setIsSettingsOpen(false)} onSignOut={() => void handleSignOut()} />
+      </SafeAreaView>
+    );
+  }
+
+  if (!authHydrated) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="dark" />
+        <View style={styles.appShell}>
+          <HeaderBar onOpenSettings={() => setIsSettingsOpen(true)} />
+          <View style={styles.panel}>
+            <CloudSyncStatus
+              state="loading"
+              title="Restoring your household session"
+              message="We’re checking whether this device already has access to the shared kitchen library."
+            />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!signedIn) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar style="dark" />
-        <LinearGradient colors={['#f8f0e7', '#f4ede4', '#fffaf5']} style={styles.authGradient}>
+        <LinearGradient colors={[colors.background, colors.surfaceWarm, colors.surface]} style={styles.authGradient}>
           <View style={styles.authShell}>
             <Text style={styles.eyebrow}>Recipe Organizer</Text>
             <Text style={styles.heroTitle}>Your household recipe library</Text>
@@ -317,25 +1307,27 @@ export default function App() {
               <TextInput
                 autoCapitalize="none"
                 placeholder="Household email"
-                placeholderTextColor="#8a7866"
+                placeholderTextColor={colors.textSubtle}
                 style={styles.input}
                 value={householdEmail}
                 onChangeText={setHouseholdEmail}
               />
               <TextInput
                 placeholder="Password"
-                placeholderTextColor="#8a7866"
+                placeholderTextColor={colors.textSubtle}
                 secureTextEntry
                 style={styles.input}
                 value={householdPassword}
                 onChangeText={setHouseholdPassword}
               />
               {signInError ? <Text style={styles.errorText}>{signInError}</Text> : null}
-              <Pressable style={styles.primaryButton} onPress={handleSignIn}>
+              <InteractivePressable style={styles.primaryButton} onPress={handleSignIn}>
                 <Text style={styles.primaryButtonLabel}>Continue to library</Text>
-              </Pressable>
+              </InteractivePressable>
               <Text style={styles.supportText}>
-                Local MVP mode is enabled until Supabase credentials are added.
+                {cloudRepository
+                  ? 'Cloud sync is enabled for the shared household library.'
+                  : 'Local MVP mode is enabled until Supabase credentials are added.'}
               </Text>
             </View>
           </View>
@@ -344,292 +1336,173 @@ export default function App() {
     );
   }
 
+  if (!hydrated) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="dark" />
+        <View style={styles.appShell}>
+          <HeaderBar onOpenSettings={() => setIsSettingsOpen(true)} />
+          <View style={styles.panel}>
+            <CloudSyncStatus
+              state={syncError ? 'error' : 'loading'}
+              title={syncError ? 'Sync paused' : 'Loading your shared recipe library'}
+              message={
+                syncError ?? 'We’re syncing your recipes, groups, and saved imports from Supabase.'
+              }
+              actionLabel={syncError ? 'View sync issue' : undefined}
+              onActionPress={syncError ? showSyncIssue : undefined}
+            />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
       <View style={styles.appShell}>
-        <HeaderBar />
+        <HeaderBar onOpenSettings={() => setIsSettingsOpen(true)} />
 
         <View style={styles.tabBar}>
-          <TabButton label="Recipes" active={activeTab === 'recipes'} onPress={() => setActiveTab('recipes')} />
-          <TabButton label="Groups" active={activeTab === 'groups'} onPress={() => setActiveTab('groups')} />
-          <TabButton label="Add" active={activeTab === 'add'} onPress={() => setActiveTab('add')} />
+          <TabButton label="Recipes" active={activeTab === 'recipes'} onPress={() => handleTabPress('recipes')} />
+          <TabButton label="Groups" active={activeTab === 'groups'} onPress={() => handleTabPress('groups')} />
+          <TabButton label="Add" active={activeTab === 'add'} onPress={() => handleTabPress('add')} />
         </View>
 
         {activeTab === 'recipes' ? (
-          <ScrollView contentContainerStyle={styles.screenContent}>
-            <Text style={styles.sectionTitle}>Recipes</Text>
-            <TextInput
-              placeholder="Search recipes or groups"
-              placeholderTextColor="#8a7866"
-              style={styles.input}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
+          <ScrollView
+            testID="recipes-scroll-view"
+            contentContainerStyle={styles.screenContent}
+            refreshControl={
+              cloudRepository ? (
+                <RefreshControl refreshing={isRefreshing} onRefresh={() => void reloadCloudState({ showRefreshing: true })} />
+              ) : undefined
+            }
+          >
+            {cloudRepository && (refreshError || isRefreshing) ? (
+              <CloudSyncStatus
+                state={refreshError ? 'error' : 'loading'}
+                title={refreshError ? 'Refresh paused' : 'Refreshing your shared library'}
+                message={refreshError ?? formatLastSynced(lastSyncedAt)}
+                actionLabel={refreshError ? 'View sync issue' : undefined}
+                onActionPress={refreshError ? showSyncIssue : undefined}
+              />
+            ) : null}
+            <RecipesHome
+              groups={state.groups}
+              favoriteGroupIds={favoriteGroups.map((group) => group.id)}
+              recipes={visibleRecipes}
+              searchQuery={searchQuery}
+              onSearchQueryChange={setSearchQuery}
+              onGroupPress={(group) => {
+                setSelectedGroupId(group.id);
+                setActiveTab('groups');
+              }}
+              onFavoriteGroupToggle={(group) => void handleToggleGroupFavorite(group)}
+              onRecipeDelete={(recipe) => confirmDeleteRecipe(recipe)}
+              onRecipePress={(recipe) => setSelectedRecipeId(recipe.id)}
             />
-
-            <Text style={styles.sectionLabel}>Groups</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupChipRow}>
-              {state.groups.map((group) => (
-                <Pressable
-                  key={group.id}
-                  style={styles.groupChip}
-                  onPress={() => {
-                    setSelectedGroupId(group.id);
-                    setActiveTab('groups');
-                  }}
-                >
-                  <Text style={styles.groupChipLabel}>{group.name}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-
-            <Text style={styles.sectionLabel}>Recent recipes</Text>
-            {visibleRecipes.map((recipe) => (
-              <Pressable key={recipe.id} style={styles.recipeCard} onPress={() => setSelectedRecipeId(recipe.id)}>
-                <Text style={styles.recipeCardTitle}>{recipe.title}</Text>
-                <Text style={styles.recipeCardMeta}>{recipe.servings ? `${recipe.servings} servings` : 'Review-ready recipe'}</Text>
-                <Text style={styles.recipeCardSnippet} numberOfLines={2}>
-                  {recipe.instructions[0]}
-                </Text>
-              </Pressable>
-            ))}
           </ScrollView>
         ) : null}
 
         {activeTab === 'groups' ? (
-          <ScrollView contentContainerStyle={styles.screenContent}>
-            <Text style={styles.sectionTitle}>Groups</Text>
-            <View style={styles.inlineComposer}>
-              <TextInput
-                placeholder="Create a group"
-                placeholderTextColor="#8a7866"
-                style={[styles.input, styles.inlineInput]}
-                value={newGroupName}
-                onChangeText={setNewGroupName}
-              />
-              <Pressable style={styles.secondaryButton} onPress={handleCreateGroup}>
-                <Text style={styles.secondaryButtonLabel}>Add</Text>
-              </Pressable>
-            </View>
-
-            {state.groups.map((group) => (
-              <Pressable key={group.id} style={styles.groupRow} onPress={() => setSelectedGroupId(group.id)}>
-                <View>
-                  <Text style={styles.groupRowTitle}>{group.name}</Text>
-                  <Text style={styles.groupRowMeta}>{groupedRecipeCount(group.id)} recipes</Text>
-                </View>
-                <Pressable
-                  onPress={() => dispatch({ type: 'group/deleted', payload: { id: group.id } })}
-                  hitSlop={8}
-                >
-                  <Text style={styles.destructiveAction}>Delete</Text>
-                </Pressable>
-              </Pressable>
-            ))}
-
-            {selectedGroup ? (
-              <View style={styles.panel}>
-                <Text style={styles.panelTitle}>{selectedGroup.name}</Text>
-                <View style={styles.inlineComposer}>
-                  <TextInput
-                    placeholder="Rename group"
-                    placeholderTextColor="#8a7866"
-                    style={[styles.input, styles.inlineInput]}
-                    value={renameGroupName}
-                    onChangeText={setRenameGroupName}
-                  />
-                  <Pressable style={styles.secondaryButton} onPress={handleRenameGroup}>
-                    <Text style={styles.secondaryButtonLabel}>Rename</Text>
-                  </Pressable>
-                </View>
-                {recipesForGroup(state, selectedGroup.id).map((recipe) => (
-                  <Pressable key={recipe.id} style={styles.groupRecipeCard} onPress={() => setSelectedRecipeId(recipe.id)}>
-                    <Text style={styles.groupRecipeTitle}>{recipe.title}</Text>
-                    <Text style={styles.groupRecipeMeta}>{recipe.instructions[0]}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
-          </ScrollView>
+          <GroupsScreen
+            groups={state.groups}
+            orderedGroups={orderedGroups}
+            selectedGroup={selectedGroup}
+            recipesForSelectedGroup={selectedGroup ? recipesForGroup(state, selectedGroup.id) : []}
+            newGroupName={newGroupName}
+            renameGroupName={renameGroupName}
+            syncError={syncError}
+            refreshControl={
+              cloudRepository ? (
+                <RefreshControl refreshing={isRefreshing} onRefresh={() => void reloadCloudState({ showRefreshing: true })} />
+              ) : undefined
+            }
+            groupedRecipeCount={groupedRecipeCount}
+            onNewGroupNameChange={setNewGroupName}
+            onRenameGroupNameChange={setRenameGroupName}
+            onCreateGroup={handleCreateGroup}
+            onRenameGroup={handleRenameGroup}
+            onSelectGroup={setSelectedGroupId}
+            onToggleGroupFavorite={(group) => void handleToggleGroupFavorite(group)}
+            onDeleteGroup={confirmDeleteGroup}
+            onRecipePress={setSelectedRecipeId}
+            onRecipeDelete={confirmDeleteRecipe}
+          />
         ) : null}
 
         {activeTab === 'add' ? (
-          <ScrollView
-            testID="add-scroll-view"
-            contentContainerStyle={styles.screenContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            <Text style={styles.sectionTitle}>Add</Text>
-            {!reviewDraft ? (
-              <>
-                <View style={styles.panel}>
-                  <Text style={styles.panelTitle}>From link</Text>
-                  <Text style={styles.panelBody}>Paste a recipe URL and turn it into a review draft before saving.</Text>
-                  <TextInput
-                    autoCapitalize="none"
-                    placeholder="https://example.com/cacio-e-pepe"
-                    placeholderTextColor="#8a7866"
-                    style={styles.input}
-                    value={urlInput}
-                    onChangeText={setUrlInput}
-                  />
-                  {importError ? <Text style={styles.errorText}>{importError}</Text> : null}
-                  <Pressable style={styles.primaryButton} onPress={beginUrlReview}>
-                    <Text style={styles.primaryButtonLabel}>
-                      {isImportingUrl ? 'Importing recipe…' : 'Create review draft'}
-                    </Text>
-                  </Pressable>
-                </View>
-                <View style={styles.panel}>
-                  <Text style={styles.panelTitle}>From photo</Text>
-                  <Text style={styles.panelBody}>Capture cookbook pages or import them from your library.</Text>
-                  <View style={styles.actionRow}>
-                    <Pressable style={styles.secondaryButton} onPress={() => beginPhotoReview('camera')}>
-                      <Text style={styles.secondaryButtonLabel}>
-                        {isImportingPhoto ? 'Importing photo…' : 'Use camera'}
-                      </Text>
-                    </Pressable>
-                    <Pressable style={styles.secondaryButton} onPress={() => beginPhotoReview('library')}>
-                      <Text style={styles.secondaryButtonLabel}>
-                        {isImportingPhoto ? 'Importing photo…' : 'Photo library'}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-              </>
-            ) : (
-              <View style={styles.panel}>
-                <Pressable
-                  style={styles.inlineBackButton}
-                  onPress={() => {
-                    setReviewDraft(null);
-                    setEditingRecipeId(null);
-                  }}
-                >
-                  <Text style={styles.inlineBackButtonLabel}>Back to import</Text>
-                </Pressable>
-                <Text style={styles.panelTitle}>Review import</Text>
-                <Text style={styles.panelBody}>
-                  Edit anything the parser missed, choose a group, then confirm the recipe to save it into your shared library.
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  value={reviewDraft.title}
-                  onChangeText={(value) => setReviewDraft({ ...reviewDraft, title: value })}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Optional description"
-                  placeholderTextColor="#8a7866"
-                  value={reviewDraft.description ?? ''}
-                  onChangeText={(value) => setReviewDraft({ ...reviewDraft, description: value })}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Servings"
-                  placeholderTextColor="#8a7866"
-                  value={reviewDraft.servings ?? ''}
-                  onChangeText={(value) => setReviewDraft({ ...reviewDraft, servings: value })}
-                />
-                <EditableListField
-                  label="Ingredients"
-                  lines={reviewDraft.ingredients}
-                  onChange={(lines) => setReviewDraft({ ...reviewDraft, ingredients: lines })}
-                />
-                <EditableListField
-                  label="Directions"
-                  lines={reviewDraft.instructions}
-                  onChange={(lines) => setReviewDraft({ ...reviewDraft, instructions: lines })}
-                />
+          <AddRecipeScreen
+            groups={state.groups}
+            reviewDraft={reviewDraft}
+            urlInput={urlInput}
+            importError={importError}
+            lastImportSourceType={lastImportSourceType}
+            isImportingUrl={isImportingUrl}
+            isImportingPhoto={isImportingPhoto}
+            sharedImportQueue={{
+              items: sharedImports,
+              onOpen: handleOpenSharedImport,
+              onRetry: (id) => void handleRetrySharedImport(id),
+              onDismiss: (id) => void handleDismissSharedImport(id),
+            }}
+            importHistory={{
+              history: importHistory,
+              onRetryImport: handleRetryImportJob,
+              onResumeReview: handleResumeImportJob,
+              onOpenRecipe: handleOpenImportRecipe,
+            }}
+            refreshControl={
+              cloudRepository && !reviewDraft ? (
+                <RefreshControl refreshing={isRefreshing} onRefresh={() => void reloadCloudState({ showRefreshing: true })} />
+              ) : undefined
+            }
+            onUrlInputChange={setUrlInput}
+            onBeginUrlReview={() => void beginUrlReview()}
+            onBeginPhotoReview={(mode) => void beginPhotoReview(mode)}
+            onRetryImport={handleRetryImport}
+            onDismissImportError={() => setImportError(null)}
+            onReviewDraftChange={setReviewDraft}
+            onBackToImport={() => {
+              const draftToPersist = reviewDraft;
 
-                <Text style={styles.sectionLabel}>Save to groups</Text>
-                <View style={styles.groupSelectionGrid}>
-                  {state.groups.map((group) => {
-                    const selected = reviewDraft.selectedGroupIds.includes(group.id);
+              void (async () => {
+                if (draftToPersist) {
+                  await persistActiveReviewDraft(draftToPersist);
+                }
 
-                    return (
-                      <Pressable
-                        key={group.id}
-                        style={[styles.groupSelectChip, selected ? styles.groupSelectChipActive : null]}
-                        onPress={() =>
-                          setReviewDraft({
-                            ...reviewDraft,
-                            selectedGroupIds: selected
-                              ? reviewDraft.selectedGroupIds.filter((groupId) => groupId !== group.id)
-                              : [...reviewDraft.selectedGroupIds, group.id],
-                          })
-                        }
-                      >
-                        <Text style={[styles.groupSelectChipLabel, selected ? styles.groupSelectChipLabelActive : null]}>
-                          {group.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                {importError ? <Text style={styles.errorText}>{importError}</Text> : null}
-
-                <View style={styles.actionRow}>
-                  <Pressable
-                    style={styles.secondaryButton}
-                    onPress={() => {
-                      setReviewDraft(null);
-                      setEditingRecipeId(null);
-                    }}
-                  >
-                    <Text style={styles.secondaryButtonLabel}>Discard draft</Text>
-                  </Pressable>
-                  <Pressable style={styles.primaryButtonCompact} onPress={handleSaveRecipe}>
-                    <Text style={styles.primaryButtonLabel}>Confirm recipe</Text>
-                  </Pressable>
-                </View>
-              </View>
-            )}
-          </ScrollView>
+                skipNextAutoRefreshTargetRef.current = 'add';
+                setReviewDraft(null);
+                setActiveImportJobId(null);
+                setActiveSharedImportId(null);
+                setEditingRecipeId(null);
+              })();
+            }}
+            onDiscardDraft={() => {
+              skipNextAutoRefreshTargetRef.current = 'add';
+              setReviewDraft(null);
+              setActiveImportJobId(null);
+              setActiveSharedImportId(null);
+              setEditingRecipeId(null);
+            }}
+            onSaveRecipe={() => void handleSaveRecipe()}
+          />
         ) : null}
 
         {selectedRecipe ? (
           <View style={styles.detailOverlay}>
-            <ScrollView style={styles.detailSheet} contentContainerStyle={styles.detailContent}>
-              <View style={styles.detailHeader}>
-                <View>
-                  <Text style={styles.detailTitle}>{selectedRecipe.title}</Text>
-                  <Text style={styles.detailMeta}>
-                    {selectedRecipe.sourceUrl ? 'Linked source included' : 'Cookbook import'} ·{' '}
-                    {selectedRecipe.servings ? `${selectedRecipe.servings} servings` : 'Review-ready'}
-                  </Text>
-                </View>
-                <Pressable onPress={() => setSelectedRecipeId(null)}>
-                  <Text style={styles.secondaryButtonLabel}>Close</Text>
-                </Pressable>
-              </View>
-              <Pressable style={styles.secondaryButton} onPress={() => beginRecipeEdit(selectedRecipe)}>
-                <Text style={styles.secondaryButtonLabel}>Edit recipe</Text>
-              </Pressable>
-              <Pressable style={styles.destructiveButton} onPress={() => handleDeleteRecipe(selectedRecipe.id)}>
-                <Text style={styles.destructiveButtonLabel}>Delete recipe</Text>
-              </Pressable>
-
-              {selectedRecipe.sourceUrl ? (
-                <Pressable onPress={() => Linking.openURL(selectedRecipe.sourceUrl!)}>
-                  <Text style={styles.sourceLink}>Open original recipe</Text>
-                </Pressable>
-              ) : null}
-
-              <Text style={styles.sectionLabel}>Ingredients</Text>
-              {selectedRecipe.ingredients.map((ingredient) => (
-                <Text key={ingredient} style={styles.detailListItem}>
-                  • {ingredient}
-                </Text>
-              ))}
-
-              <Text style={styles.sectionLabel}>Directions</Text>
-              {selectedRecipe.instructions.map((instruction, index) => (
-                <Text key={`${instruction}-${index}`} style={styles.detailListItem}>
-                  {index + 1}. {instruction}
-                </Text>
-              ))}
-            </ScrollView>
+            <RecipeDetailScreen
+              recipe={selectedRecipe}
+              groupNames={selectedRecipeGroupNames}
+              onClose={() => setSelectedRecipeId(null)}
+              onEdit={() => beginRecipeEdit(selectedRecipe)}
+              onDelete={() => confirmDeleteRecipe(selectedRecipe)}
+              onOpenSource={
+                selectedRecipe.sourceUrl ? () => Linking.openURL(selectedRecipe.sourceUrl!) : undefined
+              }
+            />
           </View>
         ) : null}
       </View>
@@ -637,38 +1510,12 @@ export default function App() {
   );
 }
 
-function EditableListField({
-  label,
-  lines,
-  onChange,
-}: {
-  label: string;
-  lines: string[];
-  onChange: (lines: string[]) => void;
-}) {
-  return (
-    <View>
-      <Text style={styles.sectionLabel}>{label}</Text>
-      <TextInput
-        multiline
-        style={[styles.input, styles.multilineInput]}
-        value={lines.join('\n')}
-        onChangeText={(value) => onChange(parseMultilineList(value))}
-      />
-    </View>
-  );
-}
-
-function HeaderBar() {
+function HeaderBar({ onOpenSettings }: { onOpenSettings: () => void }) {
   return (
     <View style={styles.headerBar}>
-      <View>
-        <Text style={styles.eyebrow}>Shared Household</Text>
-        <Text style={styles.headerTitle}>The Kitchen Shelf</Text>
-      </View>
-      <View style={styles.headerBadge}>
-        <Text style={styles.headerBadgeText}>MVP</Text>
-      </View>
+      <InteractivePressable accessibilityLabel="Open settings" onPress={onOpenSettings} style={styles.headerUtilityButton}>
+        <Text style={styles.headerUtilityButtonText}>Settings</Text>
+      </InteractivePressable>
     </View>
   );
 }
@@ -683,9 +1530,9 @@ function TabButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable style={[styles.tabButton, active ? styles.tabButtonActive : null]} onPress={onPress}>
+    <InteractivePressable style={[styles.tabButton, active ? styles.tabButtonActive : null]} onPress={onPress}>
       <Text style={[styles.tabButtonText, active ? styles.tabButtonTextActive : null]}>{label}</Text>
-    </Pressable>
+    </InteractivePressable>
   );
 }
 
@@ -729,17 +1576,111 @@ function recipesForGroup(state: RecipeBookState, groupId: string): RecipeRecord[
   return state.recipes.filter((recipe) => recipeIds.has(recipe.id));
 }
 
-function parseMultilineList(value: string): string[] {
-  return value
-    .split('\n')
-    .map((item) => item.trim())
-    .filter(Boolean);
+function createImportJobId() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
+function findSavedRecipeId(
+  recipes: RecipeRecord[],
+  previousRecipeIds: Set<string>,
+  draft: Pick<RecipeDraft, 'title' | 'sourceType' | 'sourceUrl'>
+) {
+  return (
+    recipes.find((recipe) => !previousRecipeIds.has(recipe.id))?.id ??
+    recipes.find(
+      (recipe) =>
+        recipe.title === draft.title &&
+        recipe.sourceType === draft.sourceType &&
+        recipe.sourceUrl === draft.sourceUrl
+    )?.id
+  );
+}
+
+function findExistingRecipeForSharedImport(record: PendingSharedImport, recipes: RecipeRecord[]) {
+  if (record.sourceKind !== 'url' || !('url' in record.payload)) {
+    return undefined;
+  }
+
+  const sharedUrl = normalizeRecipeSourceUrl(record.payload.url);
+  if (!sharedUrl) {
+    return undefined;
+  }
+
+  return recipes.find((recipe) => normalizeRecipeSourceUrl(recipe.sourceUrl) === sharedUrl);
+}
+
+function normalizeRecipeSourceUrl(value?: string) {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(value.trim());
+    parsed.hash = '';
+    parsed.search = '';
+    parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return value.trim().replace(/\/+$/, '');
+  }
+}
+
+function readSelectedGroupIds(draft: RecipeDraft) {
+  if ('selectedGroupIds' in draft && Array.isArray(draft.selectedGroupIds)) {
+    return draft.selectedGroupIds;
+  }
+
+  return [];
+}
+
+async function readStoredPhotoAssets(sourcePhotoUris: string[]): Promise<StoredPhotoAsset[]> {
+  const assets = await Promise.all(
+    sourcePhotoUris.map(async (uri): Promise<StoredPhotoAsset | null> => {
+      try {
+        return {
+          uri,
+          mimeType: inferImageMimeType(uri),
+          base64: await FileSystem.readAsStringAsync(uri, { encoding: 'base64' }),
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return assets.filter((asset): asset is StoredPhotoAsset => Boolean(asset));
+}
+
+function inferImageMimeType(uri: string) {
+  const normalizedUri = uri.toLowerCase();
+
+  if (normalizedUri.endsWith('.png')) {
+    return 'image/png';
+  }
+
+  if (normalizedUri.endsWith('.webp')) {
+    return 'image/webp';
+  }
+
+  return 'image/jpeg';
+}
+
+function formatLastSynced(value: string | null) {
+  if (!value) {
+    return 'Last synced just now';
+  }
+
+  return `Last synced at ${new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f7f1ea',
+    backgroundColor: colors.background,
   },
   authGradient: {
     flex: 1,
@@ -747,354 +1688,133 @@ const styles = StyleSheet.create({
   authShell: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
-    gap: 18,
+    paddingHorizontal: spacing.xl,
+    gap: spacing.lg,
   },
   eyebrow: {
-    color: '#a86238',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
+    ...type.eyebrow,
+    color: colors.accent,
   },
   heroTitle: {
-    color: '#241711',
-    fontSize: 34,
-    fontWeight: '700',
-    lineHeight: 40,
+    ...type.title,
+    color: colors.text,
   },
   heroBody: {
-    color: '#5d4b3d',
-    fontSize: 16,
-    lineHeight: 24,
+    ...type.body,
+    color: colors.textMuted,
   },
   authCard: {
-    backgroundColor: 'rgba(255,255,255,0.88)',
-    borderColor: '#ead8c7',
-    borderRadius: 28,
+    ...shadows.floating,
+    backgroundColor: 'rgba(255,253,249,0.92)',
+    borderColor: colors.border,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    gap: 14,
-    padding: 20,
+    gap: spacing.sm,
+    padding: spacing.lg,
   },
   appShell: {
     flex: 1,
-    paddingHorizontal: 18,
-    paddingTop: 8,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
   },
   headerBar: {
     alignItems: 'center',
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 18,
+    justifyContent: 'flex-end',
+    marginBottom: spacing.lg,
+    minHeight: 36,
   },
-  headerTitle: {
-    color: '#241711',
-    fontSize: 26,
-    fontWeight: '700',
+  headerUtilityButton: {
+    backgroundColor: colors.surfaceWarm,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
   },
-  headerBadge: {
-    backgroundColor: '#efe1d3',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  headerBadgeText: {
-    color: '#6e4b34',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
+  headerUtilityButtonText: {
+    ...type.eyebrow,
+    color: colors.accentPressed,
   },
   tabBar: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 18,
+    gap: spacing.xs,
+    marginBottom: spacing.lg,
+    padding: spacing.xs,
   },
   tabButton: {
-    backgroundColor: '#efe6dd',
-    borderRadius: 18,
+    backgroundColor: 'transparent',
+    borderRadius: radius.md,
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: spacing.sm,
   },
   tabButtonActive: {
-    backgroundColor: '#a86238',
+    ...shadows.card,
+    backgroundColor: colors.surface,
   },
   tabButtonText: {
-    color: '#6d5647',
+    color: colors.textMuted,
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
     textAlign: 'center',
   },
   tabButtonTextActive: {
-    color: '#fff7f2',
+    color: colors.accentPressed,
   },
   screenContent: {
-    gap: 16,
+    gap: spacing.md,
     paddingBottom: 120,
   },
-  sectionTitle: {
-    color: '#241711',
-    fontSize: 30,
-    fontWeight: '700',
-  },
-  sectionLabel: {
-    color: '#8a5b3f',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-  },
   input: {
-    backgroundColor: '#fffaf5',
-    borderColor: '#e6d5c5',
-    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.md,
     borderWidth: 1,
-    color: '#241711',
+    color: colors.text,
     fontSize: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  multilineInput: {
-    minHeight: 110,
-    textAlignVertical: 'top',
-  },
-  inlineComposer: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-  },
-  inlineInput: {
-    flex: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   primaryButton: {
-    backgroundColor: '#a86238',
-    borderRadius: 18,
-    paddingVertical: 15,
-  },
-  primaryButtonCompact: {
-    backgroundColor: '#a86238',
-    borderRadius: 18,
-    flex: 1,
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
     paddingVertical: 15,
   },
   primaryButtonLabel: {
-    color: '#fffaf5',
+    color: colors.surface,
     fontSize: 16,
     fontWeight: '700',
     textAlign: 'center',
   },
-  secondaryButton: {
-    backgroundColor: '#efe6dd',
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-  },
-  secondaryButtonLabel: {
-    color: '#6d5647',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  destructiveButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#fbe8e3',
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-  },
-  destructiveButtonLabel: {
-    color: '#b33f2f',
-    fontSize: 15,
-    fontWeight: '700',
-  },
   supportText: {
-    color: '#7d6758',
+    color: colors.textSubtle,
     fontSize: 13,
     lineHeight: 18,
   },
   errorText: {
-    color: '#b33f2f',
+    color: colors.danger,
     fontSize: 14,
     fontWeight: '600',
-  },
-  groupChipRow: {
-    gap: 10,
-  },
-  groupChip: {
-    backgroundColor: '#fffaf5',
-    borderColor: '#e6d5c5',
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  groupChipLabel: {
-    color: '#6d5647',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  recipeCard: {
-    backgroundColor: '#fffaf5',
-    borderColor: '#e7d7c8',
-    borderRadius: 24,
-    borderWidth: 1,
-    gap: 8,
-    padding: 18,
-  },
-  recipeCardTitle: {
-    color: '#241711',
-    fontSize: 21,
-    fontWeight: '700',
-  },
-  recipeCardMeta: {
-    color: '#8a5b3f',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  recipeCardSnippet: {
-    color: '#5d4b3d',
-    fontSize: 15,
-    lineHeight: 22,
   },
   panel: {
-    backgroundColor: '#fffaf5',
-    borderColor: '#e7d7c8',
-    borderRadius: 26,
+    ...shadows.card,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    gap: 14,
-    padding: 18,
-  },
-  panelTitle: {
-    color: '#241711',
-    fontSize: 22,
-    fontWeight: '700',
-  },
-  panelBody: {
-    color: '#5d4b3d',
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  groupRow: {
-    alignItems: 'center',
-    backgroundColor: '#fffaf5',
-    borderColor: '#e7d7c8',
-    borderRadius: 20,
-    borderWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 18,
-  },
-  groupRowTitle: {
-    color: '#241711',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  groupRowMeta: {
-    color: '#7d6758',
-    fontSize: 14,
-  },
-  destructiveAction: {
-    color: '#b33f2f',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  groupRecipeCard: {
-    borderColor: '#eadfd3',
-    borderRadius: 18,
-    borderWidth: 1,
-    gap: 4,
-    padding: 14,
-  },
-  groupRecipeTitle: {
-    color: '#241711',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  groupRecipeMeta: {
-    color: '#5d4b3d',
-    fontSize: 14,
-  },
-  groupSelectionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  groupSelectChip: {
-    backgroundColor: '#efe6dd',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  groupSelectChipActive: {
-    backgroundColor: '#2f6f5d',
-  },
-  groupSelectChipLabel: {
-    color: '#6d5647',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  groupSelectChipLabelActive: {
-    color: '#f5fff8',
+    gap: spacing.sm,
+    padding: spacing.lg,
   },
   detailOverlay: {
-    backgroundColor: 'rgba(36, 23, 17, 0.18)',
+    backgroundColor: colors.background,
     bottom: 0,
     left: 0,
     position: 'absolute',
     right: 0,
     top: 0,
-  },
-  detailSheet: {
-    backgroundColor: '#fffaf5',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    marginTop: 120,
-  },
-  detailContent: {
-    gap: 14,
-    padding: 22,
-    paddingBottom: 80,
-  },
-  detailHeader: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  detailTitle: {
-    color: '#241711',
-    fontSize: 28,
-    fontWeight: '700',
-    maxWidth: 280,
-  },
-  detailMeta: {
-    color: '#8a5b3f',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 6,
-  },
-  sourceLink: {
-    color: '#2c6a7c',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  detailListItem: {
-    color: '#3b2d24',
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  inlineBackButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#efe6dd',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  inlineBackButtonLabel: {
-    color: '#6d5647',
-    fontSize: 14,
-    fontWeight: '700',
   },
 });

@@ -2,6 +2,7 @@
   "expo": {
     "name": "Kitchen Shelf",
     "slug": "recipe-organizer",
+    "scheme": "kitchenshelf",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,6 +14,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "bundleIdentifier": "com.gtstewart16.recipeorganizer",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Kitchen Shelf uses the camera to capture cookbook recipes."
@@ -33,6 +35,14 @@
       "expoPublicSupabaseUrl": "",
       "expoPublicSupabaseAnonKey": "",
       "expoPublicSupabaseImportFunctionUrl": ""
-    }
+    },
+    "plugins": [
+      [
+        "./plugins/with-ios-share-into-app",
+        {
+          "extensionBundleIdentifier": "com.gtstewart16.recipeorganizer.share"
+        }
+      ]
+    ]
   }
 }
