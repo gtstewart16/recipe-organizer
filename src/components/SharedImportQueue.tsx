@@ -37,6 +37,11 @@ export function SharedImportQueue({ items, onOpen, onRetry, onDismiss }: SharedI
                   <Text style={styles.primaryActionLabel}>Review draft</Text>
                 </InteractivePressable>
               ) : null}
+              {item.status === 'duplicate' && item.recipeId ? (
+                <InteractivePressable style={styles.primaryAction} onPress={() => onOpen(item.id)}>
+                  <Text style={styles.primaryActionLabel}>Open recipe</Text>
+                </InteractivePressable>
+              ) : null}
               {item.status === 'failed' ? (
                 <InteractivePressable style={styles.secondaryAction} onPress={() => onRetry(item.id)}>
                   <Text style={styles.secondaryActionLabel}>Retry</Text>
@@ -58,6 +63,10 @@ function formatStatus(status: PendingSharedImport['status']) {
     return 'Ready to review';
   }
 
+  if (status === 'duplicate') {
+    return 'Already imported';
+  }
+
   if (status === 'pending' || status === 'processing') {
     return 'Processing';
   }
@@ -66,7 +75,7 @@ function formatStatus(status: PendingSharedImport['status']) {
 }
 
 function formatStatusColor(status: PendingSharedImport['status']) {
-  if (status === 'ready') {
+  if (status === 'ready' || status === 'duplicate') {
     return colors.success;
   }
 

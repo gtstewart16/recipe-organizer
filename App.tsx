@@ -28,7 +28,7 @@ import { clearAuthSession, loadAuthSession, persistAuthSession } from './src/lib
 import { createSharedImportFromDeepLink } from './src/features/shared-imports/deep-link';
 import { processPendingSharedImport } from './src/features/shared-imports/processor';
 import { sharedImportStore } from './src/features/shared-imports/store';
-import type { PendingSharedImport } from './src/features/shared-imports/types';
+import { markSharedImportDuplicate, type PendingSharedImport } from './src/features/shared-imports/types';
 import { formatRecipeDuration } from './src/lib/duration';
 import type { ImportFeedbackSourceType } from './src/lib/import-feedback';
 import { createRecipeBookRepository, createSupabaseRecipeBookPersistence } from './src/lib/recipe-book-repository';
@@ -379,6 +379,12 @@ export default function App() {
 
   const openSharedImportForReview = useCallback(
     async (record: PendingSharedImport) => {
+      if (record.status === 'duplicate' && record.recipeId) {
+        setImportError(null);
+        setSelectedRecipeId(record.recipeId);
+        return;
+      }
+
       if (!record.draft) {
         setImportError('This shared import is not ready to review yet.');
         setActiveTab('add');
@@ -435,12 +441,39 @@ export default function App() {
       }
 
       try {
+        const existingRecipe = findExistingRecipeForSharedImport(record, state.recipes);
+
+        if (existingRecipe) {
+          const duplicateRecord = markSharedImportDuplicate(record, {
+            recipeId: existingRecipe.id,
+            title: existingRecipe.title,
+          });
+          const queuedRecord = await sharedImportStore.enqueue(duplicateRecord);
+          const recordToShow =
+            queuedRecord.status === 'duplicate' && queuedRecord.recipeId
+              ? queuedRecord
+              : { ...queuedRecord, ...duplicateRecord, id: queuedRecord.id };
+
+          if (recordToShow !== queuedRecord) {
+            await sharedImportStore.save(recordToShow);
+          }
+
+          setImportError(null);
+          setActiveTab('add');
+          await refreshSharedImports();
+          return;
+        }
+
         const processingRecord = { ...record, status: 'processing' as const };
-        await sharedImportStore.enqueue(processingRecord);
+        const queuedRecord = await sharedImportStore.enqueue(processingRecord);
         setImportError(null);
         setActiveTab('add');
         await refreshSharedImports();
-        const processedRecord = await processPendingSharedImport(processingRecord);
+        const processedRecord = await processPendingSharedImport(
+          queuedRecord.status === 'processing' || queuedRecord.status === 'pending'
+            ? queuedRecord
+            : processingRecord
+        );
         await sharedImportStore.replaceExisting(processedRecord);
         await refreshSharedImports();
 
@@ -452,7 +485,7 @@ export default function App() {
         setActiveTab('add');
       }
     },
-    [openSharedImportForReview, refreshSharedImports]
+    [openSharedImportForReview, refreshSharedImports, state.recipes]
   );
 
   useEffect(() => {
@@ -1565,6 +1598,35 @@ function findSavedRecipeId(
         recipe.sourceUrl === draft.sourceUrl
     )?.id
   );
+}
+
+function findExistingRecipeForSharedImport(record: PendingSharedImport, recipes: RecipeRecord[]) {
+  if (record.sourceKind !== 'url' || !('url' in record.payload)) {
+    return undefined;
+  }
+
+  const sharedUrl = normalizeRecipeSourceUrl(record.payload.url);
+  if (!sharedUrl) {
+    return undefined;
+  }
+
+  return recipes.find((recipe) => normalizeRecipeSourceUrl(recipe.sourceUrl) === sharedUrl);
+}
+
+function normalizeRecipeSourceUrl(value?: string) {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(value.trim());
+    parsed.hash = '';
+    parsed.search = '';
+    parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return value.trim().replace(/\/+$/, '');
+  }
 }
 
 function readSelectedGroupIds(draft: RecipeDraft) {

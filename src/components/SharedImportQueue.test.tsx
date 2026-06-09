@@ -33,6 +33,26 @@ const failedItem: PendingSharedImport = {
   updatedAt: '2026-06-07T10:03:00.000Z',
 };
 
+const duplicateItem: PendingSharedImport = {
+  id: 'share-duplicate',
+  status: 'duplicate',
+  sourceKind: 'url',
+  sourceLabel: 'example.com',
+  payload: { url: 'https://example.com/cacio-e-pepe' },
+  draft: {
+    title: 'Cacio E Pepe',
+    sourceType: 'url',
+    sourceUrl: 'https://example.com/cacio-e-pepe',
+    sourcePhotoUris: [],
+    ingredients: [],
+    instructions: [],
+    status: 'ready',
+  },
+  recipeId: 'recipe-42',
+  createdAt: '2026-06-07T10:04:00.000Z',
+  updatedAt: '2026-06-07T10:05:00.000Z',
+};
+
 describe('SharedImportQueue', () => {
   it('renders ready shared imports and opens them for review', () => {
     const onOpen = jest.fn();
@@ -75,6 +95,25 @@ describe('SharedImportQueue', () => {
 
     fireEvent.press(screen.getByText('Dismiss'));
     expect(onDismiss).toHaveBeenCalledWith('share-failed');
+  });
+
+  it('renders duplicate imports with an open recipe action', () => {
+    const onOpen = jest.fn();
+
+    render(
+      <SharedImportQueue
+        items={[duplicateItem]}
+        onOpen={onOpen}
+        onRetry={jest.fn()}
+        onDismiss={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText('Already imported')).toBeTruthy();
+    expect(screen.getByText('Cacio E Pepe')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Open recipe'));
+    expect(onOpen).toHaveBeenCalledWith('share-duplicate');
   });
 
   it('renders nothing when there are no shared imports', () => {

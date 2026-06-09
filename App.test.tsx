@@ -981,6 +981,30 @@ describe('Recipe Organizer app', () => {
     expect(await screen.findByDisplayValue('Ingredients: rice')).toBeTruthy();
   });
 
+  it('shows an already-imported shared URL instead of starting a duplicate draft', async () => {
+    seedSharedImportStorage([]);
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    await act(async () => {
+      linkingUrlHandler?.({
+        url: 'kitchenshelf://share?url=https%3A%2F%2Fexample.com%2Fjalapeno-popper-turkey-burgers',
+      });
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText('Shared imports')).toBeTruthy();
+    expect(await screen.findByText('Already imported')).toBeTruthy();
+    expect(screen.getByText('Jalapeño Popper Turkey Burgers')).toBeTruthy();
+    expect(screen.queryByText('Review import')).toBeNull();
+
+    fireEvent.press(screen.getByText('Open recipe'));
+
+    expect(screen.getByTestId('recipe-detail-screen')).toBeTruthy();
+    expect(screen.getAllByText('Jalapeño Popper Turkey Burgers').length).toBeGreaterThan(0);
+  });
+
   it('shows an Add-tab error when a deep link cannot be queued', async () => {
     seedSharedImportStorage([]);
     mockAsyncStorage.setItem.mockImplementation(async (key: string) => {

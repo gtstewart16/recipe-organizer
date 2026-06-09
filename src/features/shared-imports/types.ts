@@ -1,7 +1,13 @@
 import type { RecipeDraft } from '../../store/recipe-book';
 
 export type SharedImportSourceKind = 'url' | 'text';
-export type SharedImportStatus = 'pending' | 'processing' | 'ready' | 'failed' | 'unsupported';
+export type SharedImportStatus =
+  | 'pending'
+  | 'processing'
+  | 'ready'
+  | 'failed'
+  | 'unsupported'
+  | 'duplicate';
 
 export type SharedImportPayload = { url: string } | { text: string };
 
@@ -15,6 +21,7 @@ export type PendingSharedImport = {
   updatedAt: string;
   errorMessage?: string;
   draft?: RecipeDraft;
+  recipeId?: string;
 };
 
 export function createPendingSharedImport(input: {
@@ -36,6 +43,7 @@ export function createPendingSharedImport(input: {
     updatedAt: timestamp,
     errorMessage: undefined,
     draft: undefined,
+    recipeId: undefined,
   };
 }
 
@@ -48,6 +56,30 @@ export function markSharedImportReady(
     ...record,
     status: 'ready',
     draft,
+    recipeId: undefined,
+    errorMessage: undefined,
+    updatedAt,
+  };
+}
+
+export function markSharedImportDuplicate(
+  record: PendingSharedImport,
+  input: { recipeId: string; title: string },
+  updatedAt = new Date().toISOString()
+): PendingSharedImport {
+  return {
+    ...record,
+    status: 'duplicate',
+    draft: {
+      title: input.title,
+      sourceType: 'url',
+      sourceUrl: 'url' in record.payload ? record.payload.url : undefined,
+      sourcePhotoUris: [],
+      ingredients: [],
+      instructions: [],
+      status: 'ready',
+    },
+    recipeId: input.recipeId,
     errorMessage: undefined,
     updatedAt,
   };
