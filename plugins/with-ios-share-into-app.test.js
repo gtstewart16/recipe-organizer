@@ -45,10 +45,11 @@ describe('with-ios-share-into-app', () => {
     expect(controller.indexOf('storePendingShare(deepLinkURL)')).toBeLessThan(
       controller.indexOf('extensionContext?.open(deepLinkURL')
     );
-    expect(controller).toContain('finish(opening: deepLinkURL)');
-    expect(controller).toContain('extensionContext?.completeRequest(returningItems: nil) { [weak self] _ in');
-    expect(controller.indexOf('extensionContext?.completeRequest(returningItems: nil)')).toBeLessThan(
-      controller.indexOf('self?.openViaResponderChain(deepLinkURL)')
+    expect(controller).toContain('self?.openViaResponderChain(deepLinkURL)');
+    expect(controller).toContain('self?.finishAfterForegroundAttempt()');
+    expect(controller).toContain('DispatchQueue.main.asyncAfter(deadline: .now() + 0.6)');
+    expect(controller.indexOf('self?.openViaResponderChain(deepLinkURL)')).toBeLessThan(
+      controller.indexOf('self?.finishAfterForegroundAttempt()')
     );
     expect(controller).toContain('sel_registerName("openURL:")');
     expect(controller).toContain('currentResponder.perform(openUrlSelector, with: deepLinkURL)');

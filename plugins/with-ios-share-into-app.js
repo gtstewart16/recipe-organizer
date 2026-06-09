@@ -239,7 +239,8 @@ final class ShareViewController: UIViewController {
       if didOpen {
         self?.finish()
       } else {
-        self?.finish(opening: deepLinkURL)
+        self?.openViaResponderChain(deepLinkURL)
+        self?.finishAfterForegroundAttempt()
       }
     }
   }
@@ -270,9 +271,9 @@ final class ShareViewController: UIViewController {
     extensionContext?.completeRequest(returningItems: nil)
   }
 
-  private func finish(opening deepLinkURL: URL) {
-    extensionContext?.completeRequest(returningItems: nil) { [weak self] _ in
-      self?.openViaResponderChain(deepLinkURL)
+  private func finishAfterForegroundAttempt() {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+      self?.finish()
     }
   }
 }
