@@ -232,6 +232,7 @@ final class ShareViewController: UIViewController {
     submitButton.alpha = 0.65
     statusLabel.text = "Sending to Kitchen Shelf..."
 
+    storePendingShare(deepLinkURL)
     extensionContext?.open(deepLinkURL) { [weak self] didOpen in
       if didOpen {
         self?.finish()
@@ -288,6 +289,16 @@ function patchAppDelegateForPendingShares(contents, appScheme, pasteboardName) {
     );
   }
 
+  if (
+    nextContents.includes('kitchenShelfPendingSharePasteboardPrefix') &&
+    !nextContents.includes('kitchenShelfPendingSharePasteboardName')
+  ) {
+    nextContents = nextContents.replace(
+      /  private let kitchenShelfPendingSharePasteboardPrefix = .+\n/,
+      (match) => `${match}  private let kitchenShelfPendingSharePasteboardName = UIPasteboard.Name("${pasteboardName}")\n`
+    );
+  }
+
   if (!nextContents.includes('handleKitchenShelfPendingSharePasteboardURL')) {
     nextContents = nextContents.replace(
       /  \/\/ Universal Links\n/,
@@ -315,6 +326,14 @@ function patchAppDelegateForPendingShares(contents, appScheme, pasteboardName) {
   // Universal Links\n`
     );
   }
+
+  nextContents = nextContents
+    .replace(
+      /      let pendingShare = UIPasteboard\.general\.string\?\.trimmingCharacters\(in: \.whitespacesAndNewlines\),/,
+      `      let pendingSharePasteboard = UIPasteboard(name: kitchenShelfPendingSharePasteboardName, create: false),
+      let pendingShare = pendingSharePasteboard.string?.trimmingCharacters(in: .whitespacesAndNewlines),`
+    )
+    .replace('    UIPasteboard.general.string = ""', '    pendingSharePasteboard.string = ""');
 
   return nextContents;
 }

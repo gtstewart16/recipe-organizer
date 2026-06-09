@@ -33,6 +33,9 @@ describe('with-ios-share-into-app', () => {
     expect(controller).toContain('appScheme + "://share?url="');
     expect(controller).toContain('appScheme + "://share?text="');
     expect(controller).toContain('extensionContext?.open(deepLinkURL');
+    expect(controller.indexOf('storePendingShare(deepLinkURL)')).toBeLessThan(
+      controller.indexOf('extensionContext?.open(deepLinkURL')
+    );
     expect(controller).toContain('sel_registerName("openURL:")');
     expect(controller).toContain('currentResponder.perform(openUrlSelector, with: deepLinkURL)');
     expect(controller).toContain('private let pendingSharePasteboardName = UIPasteboard.Name("com.gtstewart16.recipeorganizer.pending-share")');
@@ -220,5 +223,53 @@ public class AppDelegate: ExpoAppDelegate {
     expect(patched.match(/kitchenShelfPendingSharePasteboardPrefix/g)).toHaveLength(2);
     expect(patched.match(/kitchenShelfPendingSharePasteboardName/g)).toHaveLength(2);
     expect(patched.match(/public override func applicationDidBecomeActive/g)).toHaveLength(1);
+  });
+
+  it('migrates an existing general pasteboard fallback to the named share pasteboard', () => {
+    const appDelegate = `import UIKit
+import Expo
+import React
+
+@UIApplicationMain
+public class AppDelegate: ExpoAppDelegate {
+  private let kitchenShelfPendingSharePasteboardPrefix = "kitchenshelf://share"
+  var window: UIWindow?
+
+  public override func applicationDidBecomeActive(_ application: UIApplication) {
+    super.applicationDidBecomeActive(application)
+    handleKitchenShelfPendingSharePasteboardURL(application)
+  }
+
+  private func handleKitchenShelfPendingSharePasteboardURL(_ application: UIApplication) {
+    guard
+      let pendingShare = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines),
+      pendingShare.hasPrefix(kitchenShelfPendingSharePasteboardPrefix),
+      let pendingShareURL = URL(string: pendingShare)
+    else {
+      return
+    }
+
+    UIPasteboard.general.string = ""
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+      _ = RCTLinkingManager.application(application, open: pendingShareURL, options: [:])
+    }
+  }
+
+  // Universal Links
+}
+`;
+
+    const patched = patchAppDelegateForPendingShares(
+      appDelegate,
+      'kitchenshelf',
+      'com.gtstewart16.recipeorganizer.pending-share'
+    );
+
+    expect(patched).toContain(
+      'private let kitchenShelfPendingSharePasteboardName = UIPasteboard.Name("com.gtstewart16.recipeorganizer.pending-share")'
+    );
+    expect(patched).toContain('UIPasteboard(name: kitchenShelfPendingSharePasteboardName, create: false)');
+    expect(patched).toContain('pendingSharePasteboard.string = ""');
+    expect(patched).not.toContain('UIPasteboard.general');
   });
 });
