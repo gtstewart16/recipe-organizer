@@ -239,7 +239,7 @@ final class ShareViewController: UIViewController {
       if didOpen {
         self?.finish()
       } else {
-        self?.openViaResponderChain(deepLinkURL)
+        self?.finish(opening: deepLinkURL)
       }
     }
   }
@@ -253,14 +253,11 @@ final class ShareViewController: UIViewController {
     while let currentResponder = responder {
       if currentResponder.responds(to: openUrlSelector) {
         currentResponder.perform(openUrlSelector, with: deepLinkURL)
-        finish()
         return
       }
 
       responder = currentResponder.next
     }
-
-    finish()
   }
 
   private func storePendingShare(_ deepLinkURL: URL) {
@@ -271,6 +268,12 @@ final class ShareViewController: UIViewController {
 
   private func finish() {
     extensionContext?.completeRequest(returningItems: nil)
+  }
+
+  private func finish(opening deepLinkURL: URL) {
+    extensionContext?.completeRequest(returningItems: nil) { [weak self] _ in
+      self?.openViaResponderChain(deepLinkURL)
+    }
   }
 }
 `;

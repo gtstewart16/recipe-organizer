@@ -45,6 +45,11 @@ describe('with-ios-share-into-app', () => {
     expect(controller.indexOf('storePendingShare(deepLinkURL)')).toBeLessThan(
       controller.indexOf('extensionContext?.open(deepLinkURL')
     );
+    expect(controller).toContain('finish(opening: deepLinkURL)');
+    expect(controller).toContain('extensionContext?.completeRequest(returningItems: nil) { [weak self] _ in');
+    expect(controller.indexOf('extensionContext?.completeRequest(returningItems: nil)')).toBeLessThan(
+      controller.indexOf('self?.openViaResponderChain(deepLinkURL)')
+    );
     expect(controller).toContain('sel_registerName("openURL:")');
     expect(controller).toContain('currentResponder.perform(openUrlSelector, with: deepLinkURL)');
     expect(controller).toContain('private let pendingSharePasteboardName = UIPasteboard.Name("com.gtstewart16.recipeorganizer.pending-share")');
