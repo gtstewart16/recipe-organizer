@@ -12,12 +12,14 @@ function writeFileIfChanged(filePath, contents) {
   fs.writeFileSync(filePath, contents);
 }
 
-function renderShareViewController({ appScheme, pasteboardName }) {
+function renderShareViewController({ appScheme, appGroupIdentifier, pasteboardName, pendingShareDefaultsKey }) {
   return `import UIKit
 import UniformTypeIdentifiers
 
 final class ShareViewController: UIViewController {
   private let appScheme = "${appScheme}"
+  private let appGroupIdentifier = "${appGroupIdentifier}"
+  private let pendingShareDefaultsKey = "${pendingShareDefaultsKey}"
   private let pendingSharePasteboardName = UIPasteboard.Name("${pasteboardName}")
   private var pendingDeepLinkURL: URL?
 
@@ -262,6 +264,7 @@ final class ShareViewController: UIViewController {
   }
 
   private func storePendingShare(_ deepLinkURL: URL) {
+    UserDefaults(suiteName: appGroupIdentifier)?.set(deepLinkURL.absoluteString, forKey: pendingShareDefaultsKey)
     let pasteboard = UIPasteboard(name: pendingSharePasteboardName, create: true)
     pasteboard?.string = deepLinkURL.absoluteString
   }
@@ -273,19 +276,38 @@ final class ShareViewController: UIViewController {
 `;
 }
 
-function patchAppDelegateForPendingShares(contents, appScheme, pasteboardName) {
+function patchAppDelegateForPendingShares(contents, appScheme, pasteboardName, appGroupIdentifier, pendingShareDefaultsKey) {
   let nextContents = contents;
 
   if (!nextContents.includes('import UIKit')) {
     nextContents = nextContents.replace(/^(import .+)$/m, 'import UIKit\n$1');
   }
 
+  nextContents = nextContents.replace(
+    'return super.application(app, open: url, options: options) || RCTLinkingManager.application(app, open: url, options: options)',
+    `let linkingResult = RCTLinkingManager.application(app, open: url, options: options)
+    return linkingResult || super.application(app, open: url, options: options)`
+  );
+
   if (!nextContents.includes('kitchenShelfPendingSharePasteboardPrefix')) {
     nextContents = nextContents.replace(
       /public class AppDelegate: ExpoAppDelegate \{/,
       `public class AppDelegate: ExpoAppDelegate {
   private let kitchenShelfPendingSharePasteboardPrefix = "${appScheme}://share"
+  private let kitchenShelfShareAppGroupIdentifier = "${appGroupIdentifier}"
+  private let kitchenShelfPendingShareDefaultsKey = "${pendingShareDefaultsKey}"
   private let kitchenShelfPendingSharePasteboardName = UIPasteboard.Name("${pasteboardName}")`
+    );
+  }
+
+  if (
+    nextContents.includes('kitchenShelfPendingSharePasteboardPrefix') &&
+    !nextContents.includes('kitchenShelfShareAppGroupIdentifier')
+  ) {
+    nextContents = nextContents.replace(
+      /  private let kitchenShelfPendingSharePasteboardPrefix = .+\n/,
+      (match) =>
+        `${match}  private let kitchenShelfShareAppGroupIdentifier = "${appGroupIdentifier}"\n  private let kitchenShelfPendingShareDefaultsKey = "${pendingShareDefaultsKey}"\n`
     );
   }
 
@@ -299,15 +321,20 @@ function patchAppDelegateForPendingShares(contents, appScheme, pasteboardName) {
     );
   }
 
-  if (!nextContents.includes('handleKitchenShelfPendingSharePasteboardURL')) {
-    nextContents = nextContents.replace(
-      /  \/\/ Universal Links\n/,
-      `  public override func applicationDidBecomeActive(_ application: UIApplication) {
-    super.applicationDidBecomeActive(application)
-    handleKitchenShelfPendingSharePasteboardURL(application)
-  }
+  const pendingShareHandler = `  private func handleKitchenShelfPendingSharePasteboardURL(_ application: UIApplication) {
+    if
+      let pendingShareDefaults = UserDefaults(suiteName: kitchenShelfShareAppGroupIdentifier),
+      let pendingShare = pendingShareDefaults.string(forKey: kitchenShelfPendingShareDefaultsKey)?.trimmingCharacters(in: .whitespacesAndNewlines),
+      pendingShare.hasPrefix(kitchenShelfPendingSharePasteboardPrefix),
+      let pendingShareURL = URL(string: pendingShare)
+    {
+      pendingShareDefaults.removeObject(forKey: kitchenShelfPendingShareDefaultsKey)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+        _ = RCTLinkingManager.application(application, open: pendingShareURL, options: [:])
+      }
+      return
+    }
 
-  private func handleKitchenShelfPendingSharePasteboardURL(_ application: UIApplication) {
     guard
       let pendingSharePasteboard = UIPasteboard(name: kitchenShelfPendingSharePasteboardName, create: false),
       let pendingShare = pendingSharePasteboard.string?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -321,21 +348,42 @@ function patchAppDelegateForPendingShares(contents, appScheme, pasteboardName) {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
       _ = RCTLinkingManager.application(application, open: pendingShareURL, options: [:])
     }
+  }`;
+
+  if (!nextContents.includes('handleKitchenShelfPendingSharePasteboardURL')) {
+    nextContents = nextContents.replace(
+      /  \/\/ Universal Links\n/,
+      `  public override func applicationDidBecomeActive(_ application: UIApplication) {
+    super.applicationDidBecomeActive(application)
+    handleKitchenShelfPendingSharePasteboardURL(application)
   }
+
+${pendingShareHandler}
 
   // Universal Links\n`
     );
+  } else {
+    nextContents = nextContents.replace(
+      /  private func handleKitchenShelfPendingSharePasteboardURL\(_ application: UIApplication\) \{[\s\S]*?\n  \}\n\n  \/\/ Universal Links/,
+      `${pendingShareHandler}\n\n  // Universal Links`
+    );
   }
 
-  nextContents = nextContents
-    .replace(
-      /      let pendingShare = UIPasteboard\.general\.string\?\.trimmingCharacters\(in: \.whitespacesAndNewlines\),/,
-      `      let pendingSharePasteboard = UIPasteboard(name: kitchenShelfPendingSharePasteboardName, create: false),
-      let pendingShare = pendingSharePasteboard.string?.trimmingCharacters(in: .whitespacesAndNewlines),`
-    )
-    .replace('    UIPasteboard.general.string = ""', '    pendingSharePasteboard.string = ""');
-
   return nextContents;
+}
+
+function renderAppGroupEntitlements(appGroupIdentifier) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>${appGroupIdentifier}</string>
+  </array>
+</dict>
+</plist>
+`;
 }
 
 function renderInfoPlist() {
@@ -385,15 +433,30 @@ function renderInfoPlist() {
 
 function writeShareExtensionFiles(iosRoot, props) {
   const extensionRoot = path.join(iosRoot, SHARE_EXTENSION_NAME);
+  const appRoot = path.join(iosRoot, 'KitchenShelf');
   fs.mkdirSync(extensionRoot, { recursive: true });
+  fs.mkdirSync(appRoot, { recursive: true });
 
   writeFileIfChanged(
     path.join(extensionRoot, 'ShareViewController.swift'),
-    renderShareViewController({ appScheme: props.appScheme, pasteboardName: props.pasteboardName })
+    renderShareViewController({
+      appScheme: props.appScheme,
+      appGroupIdentifier: props.appGroupIdentifier,
+      pasteboardName: props.pasteboardName,
+      pendingShareDefaultsKey: props.pendingShareDefaultsKey,
+    })
   );
   writeFileIfChanged(
     path.join(extensionRoot, `${SHARE_EXTENSION_NAME}-Info.plist`),
     renderInfoPlist()
+  );
+  writeFileIfChanged(
+    path.join(extensionRoot, `${SHARE_EXTENSION_NAME}.entitlements`),
+    renderAppGroupEntitlements(props.appGroupIdentifier)
+  );
+  writeFileIfChanged(
+    path.join(appRoot, 'KitchenShelf.entitlements'),
+    renderAppGroupEntitlements(props.appGroupIdentifier)
   );
 
   const appDelegatePath = path.join(iosRoot, 'KitchenShelf', 'AppDelegate.swift');
@@ -403,7 +466,9 @@ function writeShareExtensionFiles(iosRoot, props) {
       patchAppDelegateForPendingShares(
         fs.readFileSync(appDelegatePath, 'utf8'),
         props.appScheme,
-        props.pasteboardName
+        props.pasteboardName,
+        props.appGroupIdentifier,
+        props.pendingShareDefaultsKey
       )
     );
   }
@@ -428,6 +493,7 @@ function updateShareExtensionBuildSettings(project, props) {
 
     buildSettings.INFOPLIST_FILE = `"${SHARE_EXTENSION_NAME}/${SHARE_EXTENSION_NAME}-Info.plist"`;
     buildSettings.APPLICATION_EXTENSION_API_ONLY = 'YES';
+    buildSettings.CODE_SIGN_ENTITLEMENTS = `"${SHARE_EXTENSION_NAME}/${SHARE_EXTENSION_NAME}.entitlements"`;
     buildSettings.CURRENT_PROJECT_VERSION = buildSettings.CURRENT_PROJECT_VERSION || '1';
     buildSettings.DEVELOPMENT_TEAM = buildSettings.DEVELOPMENT_TEAM || '""';
     buildSettings.IPHONEOS_DEPLOYMENT_TARGET = buildSettings.IPHONEOS_DEPLOYMENT_TARGET || '15.1';
@@ -462,16 +528,21 @@ function withIosShareIntoApp(config, options = {}) {
   const appScheme = options.appScheme ?? config.scheme;
   const extensionBundleIdentifier =
     options.extensionBundleIdentifier ?? `${config.ios?.bundleIdentifier ?? 'com.kitchenshelf.app'}.share`;
+  const appGroupIdentifier =
+    options.appGroupIdentifier ?? `group.${config.ios?.bundleIdentifier ?? 'com.kitchenshelf.app'}`;
   const pasteboardName =
     options.pasteboardName ?? `${config.ios?.bundleIdentifier ?? 'com.kitchenshelf.app'}.pending-share`;
+  const pendingShareDefaultsKey = options.pendingShareDefaultsKey ?? 'pending-share-url';
 
   config = withDangerousMod(config, [
     'ios',
     (mod) => {
       writeShareExtensionFiles(mod.modRequest.platformProjectRoot, {
         appScheme,
+        appGroupIdentifier,
         extensionBundleIdentifier,
         pasteboardName,
+        pendingShareDefaultsKey,
       });
       return mod;
     },
