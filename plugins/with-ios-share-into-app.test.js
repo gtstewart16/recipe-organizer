@@ -10,7 +10,7 @@ const {
 } = require('./with-ios-share-into-app');
 
 describe('with-ios-share-into-app', () => {
-  it('writes an iOS share extension that hands URL and text shares to the app deep link', () => {
+  it('writes an iOS share extension that previews URL and text shares before submitting to the app', () => {
     const iosRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kitchen-shelf-share-'));
 
     writeShareExtensionFiles(iosRoot, {
@@ -24,6 +24,12 @@ describe('with-ios-share-into-app', () => {
     const plist = fs.readFileSync(path.join(extensionRoot, `${SHARE_EXTENSION_NAME}-Info.plist`), 'utf8');
 
     expect(controller).toContain('let appScheme = "kitchenshelf"');
+    expect(controller).toContain('private let headerLabel = UILabel()');
+    expect(controller).toContain('private let submitButton = UIButton(type: .system)');
+    expect(controller).toContain('headerLabel.text = "Kitchen Shelf"');
+    expect(controller).toContain('submitButton.setTitle("Review Recipe", for: .normal)');
+    expect(controller).toContain('statusLabel.text = "Loading shared item..."');
+    expect(controller).toContain('urlLabel.text = previewValue');
     expect(controller).toContain('appScheme + "://share?url="');
     expect(controller).toContain('appScheme + "://share?text="');
     expect(controller).toContain('extensionContext?.open(deepLinkURL');

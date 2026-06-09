@@ -19,32 +19,124 @@ import UniformTypeIdentifiers
 final class ShareViewController: UIViewController {
   private let appScheme = "${appScheme}"
   private let pendingSharePasteboardName = UIPasteboard.Name("${pasteboardName}")
+  private var pendingDeepLinkURL: URL?
+
+  private let headerLabel = UILabel()
+  private let statusLabel = UILabel()
+  private let titleLabel = UILabel()
+  private let urlLabel = UILabel()
+  private let submitButton = UIButton(type: .system)
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    view.isHidden = true
-    openFirstSharedPayload()
+    buildPreviewInterface()
+    loadFirstSharedPayload()
   }
 
-  private func openFirstSharedPayload() {
+  private func buildPreviewInterface() {
+    view.backgroundColor = .systemGroupedBackground
+
+    let closeButton = UIButton(type: .system)
+    closeButton.setTitle("Cancel", for: .normal)
+    closeButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
+    closeButton.addTarget(self, action: #selector(cancelShare), for: .touchUpInside)
+
+    headerLabel.text = "Kitchen Shelf"
+    headerLabel.font = .systemFont(ofSize: 26, weight: .bold)
+    headerLabel.textAlignment = .center
+    headerLabel.textColor = .label
+
+    submitButton.setTitle("Review Recipe", for: .normal)
+    submitButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .bold)
+    submitButton.backgroundColor = .systemBlue
+    submitButton.tintColor = .white
+    submitButton.layer.cornerRadius = 22
+    submitButton.contentEdgeInsets = UIEdgeInsets(top: 12, left: 18, bottom: 12, right: 18)
+    submitButton.isEnabled = false
+    submitButton.alpha = 0.45
+    submitButton.addTarget(self, action: #selector(submitShare), for: .touchUpInside)
+
+    let headerRow = UIStackView(arrangedSubviews: [closeButton, headerLabel, submitButton])
+    headerRow.axis = .horizontal
+    headerRow.alignment = .center
+    headerRow.spacing = 12
+
+    closeButton.widthAnchor.constraint(equalToConstant: 104).isActive = true
+    submitButton.widthAnchor.constraint(equalToConstant: 148).isActive = true
+
+    statusLabel.text = "Loading shared item..."
+    statusLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+    statusLabel.textColor = .secondaryLabel
+    statusLabel.numberOfLines = 0
+
+    titleLabel.text = "Shared recipe link"
+    titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
+    titleLabel.textColor = .label
+    titleLabel.numberOfLines = 3
+
+    urlLabel.text = "Waiting for Safari..."
+    urlLabel.font = .systemFont(ofSize: 16, weight: .regular)
+    urlLabel.textColor = .systemBlue
+    urlLabel.numberOfLines = 4
+
+    let sourceLabel = UILabel()
+    sourceLabel.text = "Open Kitchen Shelf to review ingredients, groups, and directions before saving."
+    sourceLabel.font = .systemFont(ofSize: 15, weight: .regular)
+    sourceLabel.textColor = .secondaryLabel
+    sourceLabel.numberOfLines = 0
+
+    let cardStack = UIStackView(arrangedSubviews: [statusLabel, titleLabel, urlLabel, sourceLabel])
+    cardStack.axis = .vertical
+    cardStack.spacing = 12
+    cardStack.translatesAutoresizingMaskIntoConstraints = false
+
+    let card = UIView()
+    card.backgroundColor = .secondarySystemGroupedBackground
+    card.layer.cornerRadius = 22
+    card.translatesAutoresizingMaskIntoConstraints = false
+    card.addSubview(cardStack)
+
+    NSLayoutConstraint.activate([
+      cardStack.topAnchor.constraint(equalTo: card.topAnchor, constant: 22),
+      cardStack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 22),
+      cardStack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -22),
+      cardStack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -22),
+    ])
+
+    let rootStack = UIStackView(arrangedSubviews: [headerRow, card])
+    rootStack.axis = .vertical
+    rootStack.spacing = 32
+    rootStack.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(rootStack)
+
+    NSLayoutConstraint.activate([
+      rootStack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 28),
+      rootStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
+      rootStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
+    ])
+  }
+
+  private func loadFirstSharedPayload() {
     guard let extensionItem = extensionContext?.inputItems.first as? NSExtensionItem else {
-      finish()
+      showUnsupportedShare()
       return
     }
 
     let attachments = extensionItem.attachments ?? []
-    if openFirstItem(matching: UTType.url.identifier, from: attachments, queryName: "url") {
+    let previewTitle = preferredTitle(from: extensionItem)
+
+    if loadFirstItem(matching: UTType.url.identifier, from: attachments, queryName: "url", previewTitle: previewTitle) {
       return
     }
 
-    if openFirstItem(matching: UTType.plainText.identifier, from: attachments, queryName: "text") {
+    if loadFirstItem(matching: UTType.plainText.identifier, from: attachments, queryName: "text", previewTitle: previewTitle) {
       return
     }
 
-    finish()
+    showUnsupportedShare()
   }
 
-  private func openFirstItem(matching typeIdentifier: String, from attachments: [NSItemProvider], queryName: String) -> Bool {
+  private func loadFirstItem(matching typeIdentifier: String, from attachments: [NSItemProvider], queryName: String, previewTitle: String) -> Bool {
     guard let provider = attachments.first(where: { $0.hasItemConformingToTypeIdentifier(typeIdentifier) }) else {
       return false
     }
@@ -53,24 +145,44 @@ final class ShareViewController: UIViewController {
       let value: String
       if let url = item as? URL {
         value = url.absoluteString
+      } else if let url = item as? NSURL {
+        value = url.absoluteString ?? ""
       } else if let text = item as? String {
         value = text
+      } else if let text = item as? NSString {
+        value = text as String
       } else {
         value = ""
       }
 
       DispatchQueue.main.async {
-        self?.openApp(queryName: queryName, value: value)
+        self?.prepareShare(queryName: queryName, value: value, previewTitle: previewTitle)
       }
     }
 
     return true
   }
 
-  private func openApp(queryName: String, value: String) {
+  private func preferredTitle(from item: NSExtensionItem) -> String {
+    let candidates = [
+      item.attributedTitle?.string,
+      item.attributedContentText?.string,
+    ]
+
+    for candidate in candidates {
+      let trimmedCandidate = candidate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      if !trimmedCandidate.isEmpty {
+        return trimmedCandidate
+      }
+    }
+
+    return "Shared recipe link"
+  }
+
+  private func prepareShare(queryName: String, value: String, previewTitle: String) {
     let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedValue.isEmpty else {
-      finish()
+      showUnsupportedShare()
       return
     }
 
@@ -82,9 +194,43 @@ final class ShareViewController: UIViewController {
       let encodedValue = trimmedValue.addingPercentEncoding(withAllowedCharacters: allowedCharacters),
       let deepLinkURL = URL(string: urlPrefix + encodedValue)
     else {
-      finish()
+      showUnsupportedShare()
       return
     }
+
+    pendingDeepLinkURL = deepLinkURL
+    showPreview(title: previewTitle, previewValue: trimmedValue)
+  }
+
+  private func showPreview(title: String, previewValue: String) {
+    statusLabel.text = "Ready to review"
+    titleLabel.text = title
+    urlLabel.text = previewValue
+    submitButton.isEnabled = true
+    submitButton.alpha = 1
+  }
+
+  private func showUnsupportedShare() {
+    statusLabel.text = "Kitchen Shelf could not read this shared item."
+    titleLabel.text = "Try sharing the recipe page URL"
+    urlLabel.text = "Safari recipe links work best right now."
+    submitButton.isEnabled = false
+    submitButton.alpha = 0.45
+  }
+
+  @objc private func cancelShare() {
+    finish()
+  }
+
+  @objc private func submitShare() {
+    guard let deepLinkURL = pendingDeepLinkURL else {
+      showUnsupportedShare()
+      return
+    }
+
+    submitButton.isEnabled = false
+    submitButton.alpha = 0.65
+    statusLabel.text = "Sending to Kitchen Shelf..."
 
     extensionContext?.open(deepLinkURL) { [weak self] didOpen in
       if didOpen {
