@@ -30,6 +30,8 @@ type ImportOptions = {
 
 type JsonLdNode = Record<string, unknown>;
 
+const MAX_REMOTE_NORMALIZATION_TEXT_CHARS = 12000;
+
 export async function importRecipeFromUrl(
   sourceUrl: string,
   options: ImportOptions = {}
@@ -49,12 +51,17 @@ export async function importRecipeFromUrl(
   const rawText = extractImportableText(sourceUrl, html);
   const pageTitle = getMetaContent(html, 'property', 'og:title') ?? getMetaContent(html, 'name', 'title');
   const normalizer = options.normalizer ?? (hasRemoteImportFunction() ? normalizeRecipeWithRemoteFunction : undefined);
+  const recipeNode = extractRecipeNode(html);
+
+  if (recipeNode && !isInstagramUrl(sourceUrl)) {
+    return buildDraftFromRecipeNode(sourceUrl, recipeNode);
+  }
 
   if (normalizer) {
     const normalized = await normalizer({
       sourceType: 'url',
       sourceUrl,
-      rawText,
+      rawText: limitRemoteNormalizationText(rawText),
       pageTitle,
     });
 
@@ -82,15 +89,19 @@ export async function importRecipeFromUrl(
     return instagramDraft;
   }
 
-  const recipeNode = extractRecipeNode(html);
-
   if (!recipeNode) {
     return createRecipeBookDraftFromUrl(sourceUrl);
   }
 
+  return buildDraftFromRecipeNode(sourceUrl, recipeNode);
+}
+
+function buildDraftFromRecipeNode(sourceUrl: string, recipeNode: JsonLdNode): RecipeDraft {
+  const baseDraft = createRecipeBookDraftFromUrl(sourceUrl);
+
   return {
-    ...createRecipeBookDraftFromUrl(sourceUrl),
-    title: getString(recipeNode.name) || getString(recipeNode.headline) || createRecipeBookDraftFromUrl(sourceUrl).title,
+    ...baseDraft,
+    title: getString(recipeNode.name) || getString(recipeNode.headline) || baseDraft.title,
     heroImageUri: getImageUrl(recipeNode.image),
     ingredients: getIngredients(recipeNode.recipeIngredient),
     instructions: getInstructions(recipeNode.recipeInstructions),
@@ -517,6 +528,21 @@ function extractImportableText(sourceUrl: string, html: string): string {
   const bodyText = stripHtml(html);
 
   return [jsonLdText, bodyText].filter(Boolean).join('\n');
+}
+
+function limitRemoteNormalizationText(rawText: string): string {
+  const normalized = rawText.replace(/\s+/g, ' ').trim();
+
+  if (normalized.length <= MAX_REMOTE_NORMALIZATION_TEXT_CHARS) {
+    return normalized;
+  }
+
+  const separator = '\n[content truncated for import]\n';
+  const segmentLength = Math.floor((MAX_REMOTE_NORMALIZATION_TEXT_CHARS - separator.length) / 2);
+  const start = normalized.slice(0, segmentLength).trim();
+  const end = normalized.slice(-segmentLength).trim();
+
+  return `${start}${separator}${end}`;
 }
 
 function decodeJsonString(value: string): string {
