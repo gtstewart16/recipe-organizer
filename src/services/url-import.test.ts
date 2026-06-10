@@ -64,6 +64,94 @@ describe('importRecipeFromUrl', () => {
     expect(draft.sourceUrl).toBe('https://example.com/cacio-e-pepe');
   });
 
+  it('uses recipe schema before remote normalization for regular recipe pages', async () => {
+    const normalizer = jest.fn<
+      Promise<{ title: string; ingredients: string[]; instructions: string[] }>,
+      [{ rawText: string; pageTitle?: string }]
+    >(async (_input) => ({
+      title: 'Expensive Remote Result',
+      ingredients: ['Remote ingredient'],
+      instructions: ['Remote instruction.'],
+    }));
+
+    const draft = await importRecipeFromUrl('https://example.com/schema-first', {
+      fetcher: async () =>
+        new Response(
+          `
+            <html>
+              <head>
+                <script type="application/ld+json">
+                  {
+                    "@context": "https://schema.org",
+                    "@type": "Recipe",
+                    "name": "Schema First Soup",
+                    "recipeYield": "6",
+                    "recipeIngredient": ["2 cups stock", "1 cup corn"],
+                    "recipeInstructions": [
+                      { "@type": "HowToStep", "text": "Simmer the stock and corn." }
+                    ]
+                  }
+                </script>
+              </head>
+              <body>${'newsletter signup '.repeat(2000)}</body>
+            </html>
+          `,
+          { status: 200 }
+        ),
+      normalizer,
+    });
+
+    expect(normalizer).not.toHaveBeenCalled();
+    expect(draft.title).toBe('Schema First Soup');
+    expect(draft.ingredients).toEqual(['2 cups stock', '1 cup corn']);
+    expect(draft.instructions).toEqual(['Simmer the stock and corn.']);
+  });
+
+  it('caps text sent to remote normalization when schema is unavailable', async () => {
+    let normalizationInput: { rawText: string; pageTitle?: string } | undefined;
+    const normalizer = jest.fn(async (input: { rawText: string; pageTitle?: string }) => {
+      normalizationInput = input;
+
+      return {
+        title: 'Capped Recipe',
+        ingredients: ['1 ingredient'],
+        instructions: ['Cook it.'],
+      };
+    });
+
+    await importRecipeFromUrl('https://example.com/giant-recipe-page', {
+      fetcher: async () =>
+        new Response(
+          `
+            <html>
+              <head>
+                <meta property="og:title" content="Giant Recipe Page" />
+              </head>
+              <body>
+                ${'advertisement newsletter comments '.repeat(3000)}
+                <h1>Useful Recipe</h1>
+                <p>Ingredients: 1 ingredient. Instructions: Cook it.</p>
+              </body>
+            </html>
+          `,
+          { status: 200 }
+        ),
+      normalizer,
+    });
+
+    expect(normalizer).toHaveBeenCalled();
+    expect(normalizationInput).toBeDefined();
+    const rawText = normalizationInput?.rawText ?? '';
+
+    expect(rawText.length).toBeLessThanOrEqual(12000);
+    expect(rawText).toContain('Useful Recipe');
+    expect(normalizer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pageTitle: 'Giant Recipe Page',
+      })
+    );
+  });
+
   it('falls back to a placeholder draft when no recipe schema exists', async () => {
     const draft = await importRecipeFromUrl('https://example.com/not-a-recipe', {
       fetcher: async () => new Response('<html><body>No recipe here.</body></html>', { status: 200 }),
