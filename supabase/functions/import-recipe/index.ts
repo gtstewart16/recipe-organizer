@@ -1,11 +1,7 @@
-type ImportRecipeRequest = {
-  sourceType: 'url' | 'photo' | 'shared_text';
-  sourceUrl?: string;
-  sourcePhotoUris?: string[];
-  imageDataUrls?: string[];
-  rawText?: string;
-  pageTitle?: string;
-};
+import {
+  ImportRecipeRequest,
+  trimImportRecipeRequestForNormalization,
+} from './import-input.ts';
 
 type ImportRecipeResponse = {
   isRecipe: boolean;
@@ -153,13 +149,14 @@ function buildFallbackResponse(request: ImportRecipeRequest): ImportRecipeRespon
 async function normalizeRecipeWithOpenAI(request: ImportRecipeRequest): Promise<OpenAIRecipe | null> {
   const apiKey = Deno.env.get('OPENAI_API_KEY');
   const model = Deno.env.get('OPENAI_MODEL') ?? 'gpt-4.1-mini';
+  const trimmedRequest = trimImportRecipeRequestForNormalization(request);
 
   if (!apiKey) {
     return null;
   }
 
   const prompt =
-    request.sourceType === 'photo'
+    trimmedRequest.sourceType === 'photo'
       ? [
           'You extract recipe data from cookbook photos and return clean structured recipe data.',
           'Rules:',
@@ -188,26 +185,32 @@ async function normalizeRecipeWithOpenAI(request: ImportRecipeRequest): Promise<
           '- If prep or cook time appear, preserve them in prepTime and cookTime.',
           '- If description is not useful, return null for description.',
           '',
-          `Source URL: ${request.sourceUrl ?? ''}`,
-          `Page title: ${request.pageTitle ?? ''}`,
+          `Source URL: ${trimmedRequest.sourceUrl ?? ''}`,
+          `Page title: ${trimmedRequest.pageTitle ?? ''}`,
           '',
           'Raw extracted text:',
-          request.rawText ?? '',
+          trimmedRequest.rawText ?? '',
         ].join('\n');
 
-  if ((request.sourceType === 'url' || request.sourceType === 'shared_text') && !request.rawText?.trim()) {
+  if (
+    (trimmedRequest.sourceType === 'url' || trimmedRequest.sourceType === 'shared_text') &&
+    !trimmedRequest.rawText?.trim()
+  ) {
     return null;
   }
 
-  if (request.sourceType === 'photo' && (!request.imageDataUrls || request.imageDataUrls.length === 0)) {
+  if (
+    trimmedRequest.sourceType === 'photo' &&
+    (!trimmedRequest.imageDataUrls || trimmedRequest.imageDataUrls.length === 0)
+  ) {
     return null;
   }
 
   const userContent =
-    request.sourceType === 'photo'
+    trimmedRequest.sourceType === 'photo'
       ? [
           { type: 'text', text: prompt },
-          ...(request.imageDataUrls ?? []).map((url) => ({
+          ...(trimmedRequest.imageDataUrls ?? []).map((url) => ({
             type: 'image_url',
             image_url: {
               url,
