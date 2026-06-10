@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
-import { Alert, AppState, Linking, type AppStateStatus } from 'react-native';
+import { Alert, AppState, Linking, NativeModules, type AppStateStatus } from 'react-native';
 
 import type { PendingSharedImport } from './src/features/shared-imports/types';
 import type { ImportJob, RecipeBookState } from './src/store/recipe-book';
@@ -245,6 +245,7 @@ const mockClearAuthSession = jest.mocked(clearAuthSession);
 const mockAsyncStorage = jest.mocked(AsyncStorage);
 const mockImportRecipeFromUrl = jest.mocked(importRecipeFromUrl);
 let linkingUrlHandler: ((event: { url: string }) => void) | null = null;
+let mockConsumePendingShare: jest.Mock<Promise<string | null>, []>;
 
 async function renderAppToSignInGate() {
   const rendered = render(<App />);
@@ -298,6 +299,10 @@ describe('Recipe Organizer app', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     linkingUrlHandler = null;
+    mockConsumePendingShare = jest.fn(async () => null);
+    NativeModules.KitchenShelfPendingShare = {
+      consumePendingShare: mockConsumePendingShare,
+    };
     jest.spyOn(Linking, 'getInitialURL').mockResolvedValue(null);
     jest.spyOn(Linking, 'addEventListener').mockImplementation((_eventType, handler) => {
       linkingUrlHandler = handler as (event: { url: string }) => void;
@@ -945,6 +950,22 @@ describe('Recipe Organizer app', () => {
         })
       );
     });
+  });
+
+  it('queues and processes a pending native share when the app opens without an initial URL', async () => {
+    seedSharedImportStorage([]);
+    mockConsumePendingShare.mockResolvedValueOnce(
+      'kitchenshelf://share?url=https%3A%2F%2Fexample.com%2Fcacio-e-pepe'
+    );
+
+    await renderAppToSignInGate();
+    fireEvent.changeText(await screen.findByPlaceholderText('Household email'), 'home@kitchen.test');
+    fireEvent.changeText(screen.getByPlaceholderText('Password'), 'password123');
+    fireEvent.press(screen.getByText('Continue to library'));
+
+    expect(await screen.findByText('Review import')).toBeTruthy();
+    expect(await screen.findByDisplayValue('Cacio E Pepe')).toBeTruthy();
+    expect(mockConsumePendingShare).toHaveBeenCalled();
   });
 
   it('queues and processes a shared import from an Expo Go deep link', async () => {

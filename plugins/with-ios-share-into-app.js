@@ -20,6 +20,7 @@ final class ShareViewController: UIViewController {
   private let appScheme = "${appScheme}"
   private let appGroupIdentifier = "${appGroupIdentifier}"
   private let pendingShareDefaultsKey = "${pendingShareDefaultsKey}"
+  private let pendingShareFileName = "pending-share-url.txt"
   private let pendingSharePasteboardName = UIPasteboard.Name("${pasteboardName}")
   private var pendingDeepLinkURL: URL?
 
@@ -240,6 +241,7 @@ final class ShareViewController: UIViewController {
         self?.finish()
       } else {
         self?.openViaResponderChain(deepLinkURL)
+        self?.finishAfterForegroundAttempt()
       }
     }
   }
@@ -253,18 +255,22 @@ final class ShareViewController: UIViewController {
     while let currentResponder = responder {
       if currentResponder.responds(to: openUrlSelector) {
         currentResponder.perform(openUrlSelector, with: deepLinkURL)
-        finish()
         return
       }
 
       responder = currentResponder.next
     }
-
-    finish()
   }
 
   private func storePendingShare(_ deepLinkURL: URL) {
     UserDefaults(suiteName: appGroupIdentifier)?.set(deepLinkURL.absoluteString, forKey: pendingShareDefaultsKey)
+    if let appGroupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) {
+      try? deepLinkURL.absoluteString.write(
+        to: appGroupURL.appendingPathComponent(pendingShareFileName),
+        atomically: true,
+        encoding: .utf8
+      )
+    }
     let pasteboard = UIPasteboard(name: pendingSharePasteboardName, create: true)
     pasteboard?.string = deepLinkURL.absoluteString
   }
@@ -272,12 +278,23 @@ final class ShareViewController: UIViewController {
   private func finish() {
     extensionContext?.completeRequest(returningItems: nil)
   }
+
+  private func finishAfterForegroundAttempt() {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+      self?.finish()
+    }
+  }
 }
 `;
 }
 
 function patchAppDelegateForPendingShares(contents, appScheme, pasteboardName, appGroupIdentifier, pendingShareDefaultsKey) {
   let nextContents = contents;
+
+  nextContents = nextContents.replace(
+    /\n@objc\(KitchenShelfPendingShare\)\nclass KitchenShelfPendingShare: NSObject, RCTBridgeModule \{[\s\S]*?\n\}\n(?=\nclass ReactNativeDelegate:|\n?$)/,
+    '\n'
+  );
 
   if (!nextContents.includes('import UIKit')) {
     nextContents = nextContents.replace(/^(import .+)$/m, 'import UIKit\n$1');
@@ -296,6 +313,7 @@ function patchAppDelegateForPendingShares(contents, appScheme, pasteboardName, a
   private let kitchenShelfPendingSharePasteboardPrefix = "${appScheme}://share"
   private let kitchenShelfShareAppGroupIdentifier = "${appGroupIdentifier}"
   private let kitchenShelfPendingShareDefaultsKey = "${pendingShareDefaultsKey}"
+  private let kitchenShelfPendingShareFileName = "pending-share-url.txt"
   private let kitchenShelfPendingSharePasteboardName = UIPasteboard.Name("${pasteboardName}")`
     );
   }
@@ -308,6 +326,16 @@ function patchAppDelegateForPendingShares(contents, appScheme, pasteboardName, a
       /  private let kitchenShelfPendingSharePasteboardPrefix = .+\n/,
       (match) =>
         `${match}  private let kitchenShelfShareAppGroupIdentifier = "${appGroupIdentifier}"\n  private let kitchenShelfPendingShareDefaultsKey = "${pendingShareDefaultsKey}"\n`
+    );
+  }
+
+  if (
+    nextContents.includes('kitchenShelfPendingSharePasteboardPrefix') &&
+    !nextContents.includes('kitchenShelfPendingShareFileName')
+  ) {
+    nextContents = nextContents.replace(
+      /  private let kitchenShelfPendingShareDefaultsKey = .+\n/,
+      (match) => `${match}  private let kitchenShelfPendingShareFileName = "pending-share-url.txt"\n`
     );
   }
 
@@ -328,9 +356,26 @@ function patchAppDelegateForPendingShares(contents, appScheme, pasteboardName, a
       pendingShare.hasPrefix(kitchenShelfPendingSharePasteboardPrefix),
       let pendingShareURL = URL(string: pendingShare)
     {
-      pendingShareDefaults.removeObject(forKey: kitchenShelfPendingShareDefaultsKey)
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-        _ = RCTLinkingManager.application(application, open: pendingShareURL, options: [:])
+      deliverKitchenShelfPendingShare(pendingShareURL, remainingAttempts: 6)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+        guard let self else {
+          return
+        }
+
+        pendingShareDefaults.removeObject(forKey: self.kitchenShelfPendingShareDefaultsKey)
+      }
+      return
+    }
+
+    if
+      let pendingShareFileURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: kitchenShelfShareAppGroupIdentifier)?.appendingPathComponent(kitchenShelfPendingShareFileName),
+      let pendingShare = try? String(contentsOf: pendingShareFileURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+      pendingShare.hasPrefix(kitchenShelfPendingSharePasteboardPrefix),
+      let pendingShareURL = URL(string: pendingShare)
+    {
+      deliverKitchenShelfPendingShare(pendingShareURL, remainingAttempts: 6)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+        try? FileManager.default.removeItem(at: pendingShareFileURL)
       }
       return
     }
@@ -344,9 +389,21 @@ function patchAppDelegateForPendingShares(contents, appScheme, pasteboardName, a
       return
     }
 
-    pendingSharePasteboard.string = ""
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-      _ = RCTLinkingManager.application(application, open: pendingShareURL, options: [:])
+    deliverKitchenShelfPendingShare(pendingShareURL, remainingAttempts: 6)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+      pendingSharePasteboard.string = ""
+    }
+  }
+
+  private func deliverKitchenShelfPendingShare(_ pendingShareURL: URL, remainingAttempts: Int) {
+    _ = RCTLinkingManager.application(UIApplication.shared, open: pendingShareURL, options: [:])
+
+    guard remainingAttempts > 1 else {
+      return
+    }
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
+      self?.deliverKitchenShelfPendingShare(pendingShareURL, remainingAttempts: remainingAttempts - 1)
     }
   }`;
 
@@ -370,6 +427,63 @@ ${pendingShareHandler}
   }
 
   return nextContents;
+}
+
+function renderPendingShareModule(appScheme, pasteboardName, appGroupIdentifier, pendingShareDefaultsKey) {
+  return `#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
+#import <React/RCTBridgeModule.h>
+
+@interface KitchenShelfPendingShare : NSObject <RCTBridgeModule>
+@end
+
+@implementation KitchenShelfPendingShare
+
+RCT_EXPORT_MODULE();
+
+RCT_REMAP_METHOD(consumePendingShare,
+                 consumePendingShareWithResolver:(RCTPromiseResolveBlock)resolve
+                 rejecter:(RCTPromiseRejectBlock)reject)
+{
+  NSString *pendingSharePrefix = @"${appScheme}://share";
+  NSString *appGroupIdentifier = @"${appGroupIdentifier}";
+  NSString *pendingShareDefaultsKey = @"${pendingShareDefaultsKey}";
+  NSString *pendingShareFileName = @"pending-share-url.txt";
+  UIPasteboardName pendingSharePasteboardName = @"${pasteboardName}";
+
+  NSUserDefaults *pendingShareDefaults = [[NSUserDefaults alloc] initWithSuiteName:appGroupIdentifier];
+  NSString *storedPendingShare = [[pendingShareDefaults stringForKey:pendingShareDefaultsKey] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+  if (storedPendingShare.length > 0 && [storedPendingShare hasPrefix:pendingSharePrefix]) {
+    [pendingShareDefaults removeObjectForKey:pendingShareDefaultsKey];
+    resolve(storedPendingShare);
+    return;
+  }
+
+  NSURL *appGroupURL = [[NSFileManager defaultManager] containerURLForSecurityApplicationGroupIdentifier:appGroupIdentifier];
+  NSURL *pendingShareFileURL = [appGroupURL URLByAppendingPathComponent:pendingShareFileName];
+  NSString *filePendingShare = [[NSString stringWithContentsOfURL:pendingShareFileURL encoding:NSUTF8StringEncoding error:nil] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+  if (filePendingShare.length > 0 && [filePendingShare hasPrefix:pendingSharePrefix]) {
+    [[NSFileManager defaultManager] removeItemAtURL:pendingShareFileURL error:nil];
+    resolve(filePendingShare);
+    return;
+  }
+
+  UIPasteboard *pendingSharePasteboard = [UIPasteboard pasteboardWithName:pendingSharePasteboardName create:NO];
+  NSString *pasteboardPendingShare = [pendingSharePasteboard.string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+  if (pasteboardPendingShare.length > 0 && [pasteboardPendingShare hasPrefix:pendingSharePrefix]) {
+    pendingSharePasteboard.string = @"";
+    resolve(pasteboardPendingShare);
+    return;
+  }
+
+  resolve([NSNull null]);
+}
+
+@end
+`;
 }
 
 function renderAppGroupEntitlements(appGroupIdentifier) {
@@ -458,6 +572,15 @@ function writeShareExtensionFiles(iosRoot, props) {
     path.join(appRoot, 'KitchenShelf.entitlements'),
     renderAppGroupEntitlements(props.appGroupIdentifier)
   );
+  writeFileIfChanged(
+    path.join(appRoot, 'KitchenShelfPendingShare.m'),
+    renderPendingShareModule(
+      props.appScheme,
+      props.pasteboardName,
+      props.appGroupIdentifier,
+      props.pendingShareDefaultsKey
+    )
+  );
 
   const appDelegatePath = path.join(iosRoot, 'KitchenShelf', 'AppDelegate.swift');
   if (fs.existsSync(appDelegatePath)) {
@@ -505,6 +628,8 @@ function updateShareExtensionBuildSettings(project, props) {
 }
 
 function addShareExtensionTarget(project, props) {
+  addNativePendingShareModuleToAppTarget(project);
+
   if (!hasNativeTarget(project, SHARE_EXTENSION_NAME)) {
     const target = project.addTarget(
       SHARE_EXTENSION_NAME,
@@ -522,6 +647,20 @@ function addShareExtensionTarget(project, props) {
   }
 
   updateShareExtensionBuildSettings(project, props);
+}
+
+function addNativePendingShareModuleToAppTarget(project) {
+  const appTargetUuid = project.getFirstTarget?.()?.uuid;
+  if (!appTargetUuid) {
+    return;
+  }
+
+  if (project.hasFile?.('KitchenShelf/KitchenShelfPendingShare.m')) {
+    return;
+  }
+
+  const appGroupKey = project.findPBXGroupKey?.({ name: 'KitchenShelf' });
+  project.addSourceFile('KitchenShelf/KitchenShelfPendingShare.m', { target: appTargetUuid }, appGroupKey);
 }
 
 function withIosShareIntoApp(config, options = {}) {

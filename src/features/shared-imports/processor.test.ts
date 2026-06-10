@@ -66,4 +66,29 @@ describe('processPendingSharedImport', () => {
     expect(result.payload).toEqual({ url: 'https://example.com/broken' });
     expect(result.errorMessage).toBe('Network request failed');
   });
+
+  it('shows a retryable user message when OpenAI rate limits normalization', async () => {
+    const result = await processPendingSharedImport(
+      createPendingSharedImport({
+        id: 'share-4',
+        sourceKind: 'url',
+        payload: { url: 'https://www.skinnytaste.com/chicken-corn-chowder' },
+        createdAt: '2026-04-05T10:00:00.000Z',
+      }),
+      {
+        importFromUrl: async () => {
+          throw new Error(
+            'OpenAI normalization failed: { "error": { "message": "Rate limit reached for gpt-4.1-mini in organization org-example on tokens per min (TPM): Limit 200000, Used 200000, Requested 119506. Please try again in 35.851s.", "type": "tokens", "code": "rate_limit_exceeded" } }'
+          );
+        },
+      }
+    );
+
+    expect(result.status).toBe('failed');
+    expect(result.errorMessage).toBe(
+      'Kitchen Shelf hit the recipe parser rate limit. Please wait about 36 seconds, then tap Retry.'
+    );
+    expect(result.errorMessage).not.toContain('gpt-4.1-mini');
+    expect(result.errorMessage).not.toContain('org-example');
+  });
 });

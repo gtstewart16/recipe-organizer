@@ -26,6 +26,7 @@ import { RecipesHome } from './src/components/recipes-home';
 import { SettingsScreen } from './src/components/settings';
 import { clearAuthSession, loadAuthSession, persistAuthSession } from './src/lib/auth-session';
 import { createSharedImportFromDeepLink } from './src/features/shared-imports/deep-link';
+import { consumeNativePendingShare } from './src/features/shared-imports/native-pending-share';
 import { processPendingSharedImport } from './src/features/shared-imports/processor';
 import { sharedImportStore } from './src/features/shared-imports/store';
 import { markSharedImportDuplicate, type PendingSharedImport } from './src/features/shared-imports/types';
@@ -491,26 +492,47 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
 
+    const consumePendingNativeShare = async () => {
+      const pendingShare = await consumeNativePendingShare();
+
+      if (mounted && pendingShare) {
+        await handleSharedImportDeepLink(pendingShare);
+      }
+    };
+
     if (!didHandleInitialUrlRef.current) {
       didHandleInitialUrlRef.current = true;
       Linking.getInitialURL()
         .then((url) => {
           if (mounted && url) {
             void handleSharedImportDeepLink(url);
+          } else {
+            void consumePendingNativeShare();
           }
         })
         .catch(() => {
-          // Ignore malformed or unavailable launch links.
+          void consumePendingNativeShare();
         });
+    } else {
+      void consumePendingNativeShare();
     }
 
     const subscription = Linking.addEventListener('url', (event) => {
       void handleSharedImportDeepLink(event.url);
     });
 
+    const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
+      const wasBackgrounded = /inactive|background/.test(lastAppStateRef.current);
+
+      if (wasBackgrounded && nextAppState === 'active') {
+        void consumePendingNativeShare();
+      }
+    });
+
     return () => {
       mounted = false;
       subscription.remove();
+      appStateSubscription?.remove?.();
     };
   }, [handleSharedImportDeepLink]);
 

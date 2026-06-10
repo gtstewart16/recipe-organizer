@@ -29,6 +29,7 @@ describe('with-ios-share-into-app', () => {
       path.join(extensionRoot, `${SHARE_EXTENSION_NAME}.entitlements`),
       'utf8'
     );
+    const pendingShareModule = fs.readFileSync(path.join(iosRoot, 'KitchenShelf', 'KitchenShelfPendingShare.m'), 'utf8');
 
     expect(controller).toContain('let appScheme = "kitchenshelf"');
     expect(controller).toContain('private let appGroupIdentifier = "group.com.gtstewart16.recipeorganizer"');
@@ -45,10 +46,19 @@ describe('with-ios-share-into-app', () => {
     expect(controller.indexOf('storePendingShare(deepLinkURL)')).toBeLessThan(
       controller.indexOf('extensionContext?.open(deepLinkURL')
     );
+    expect(controller).toContain('self?.openViaResponderChain(deepLinkURL)');
+    expect(controller).toContain('self?.finishAfterForegroundAttempt()');
+    expect(controller).toContain('DispatchQueue.main.asyncAfter(deadline: .now() + 0.6)');
+    expect(controller.indexOf('self?.openViaResponderChain(deepLinkURL)')).toBeLessThan(
+      controller.indexOf('self?.finishAfterForegroundAttempt()')
+    );
     expect(controller).toContain('sel_registerName("openURL:")');
     expect(controller).toContain('currentResponder.perform(openUrlSelector, with: deepLinkURL)');
     expect(controller).toContain('private let pendingSharePasteboardName = UIPasteboard.Name("com.gtstewart16.recipeorganizer.pending-share")');
     expect(controller).toContain('UserDefaults(suiteName: appGroupIdentifier)?.set(deepLinkURL.absoluteString, forKey: pendingShareDefaultsKey)');
+    expect(controller).toContain('private let pendingShareFileName = "pending-share-url.txt"');
+    expect(controller).toContain('containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier)');
+    expect(controller).toContain('appGroupURL.appendingPathComponent(pendingShareFileName)');
     expect(controller).toContain('UIPasteboard(name: pendingSharePasteboardName, create: true)');
     expect(controller).toContain('pasteboard?.string = deepLinkURL.absoluteString');
 
@@ -61,19 +71,38 @@ describe('with-ios-share-into-app', () => {
     expect(plist).toContain('$(EXECUTABLE_NAME)');
     expect(appEntitlements).toContain('group.com.gtstewart16.recipeorganizer');
     expect(extensionEntitlements).toContain('group.com.gtstewart16.recipeorganizer');
+    expect(pendingShareModule).toContain('@interface KitchenShelfPendingShare : NSObject <RCTBridgeModule>');
+    expect(pendingShareModule).toContain('RCT_EXPORT_MODULE();');
+    expect(pendingShareModule).toContain('RCT_REMAP_METHOD(consumePendingShare');
+    expect(pendingShareModule).toContain('NSString *pendingSharePrefix = @"kitchenshelf://share";');
+    expect(pendingShareModule).toContain('NSString *appGroupIdentifier = @"group.com.gtstewart16.recipeorganizer";');
+    expect(pendingShareModule).toContain('NSString *pendingShareFileName = @"pending-share-url.txt";');
+    expect(pendingShareModule).toContain('containerURLForSecurityApplicationGroupIdentifier:appGroupIdentifier');
+    expect(pendingShareModule).toContain('removeItemAtURL:pendingShareFileURL error:nil');
+    expect(pendingShareModule).toContain('UIPasteboardName pendingSharePasteboardName = @"com.gtstewart16.recipeorganizer.pending-share";');
+    expect(pendingShareModule).toContain('[pendingShareDefaults removeObjectForKey:pendingShareDefaultsKey]');
+    expect(pendingShareModule).toContain('resolve([NSNull null])');
   });
 
-  it('adds the Swift file through the target sources phase without requiring a Plugins group', () => {
+  it('adds native source files through target sources phases without requiring a Plugins group', () => {
     const calls = [];
+    const sourceFiles = [];
     const project = {
-      pbxNativeTargetSection: () => ({}),
+      pbxNativeTargetSection: () => ({
+        APP_TARGET: {
+          buildPhases: [],
+        },
+      }),
+      getFirstTarget: () => ({ uuid: 'APP_TARGET' }),
       addTarget: () => ({ uuid: 'SHARE_TARGET' }),
       addBuildPhase: (files, type, comment, target) => {
         calls.push({ files, type, comment, target });
       },
-      addSourceFile: () => {
-        throw new Error('Plugins group is missing');
+      addSourceFile: (file, options, group) => {
+        sourceFiles.push({ file, options, group });
       },
+      findPBXGroupKey: () => 'APP_GROUP',
+      hasFile: () => false,
       pbxXCBuildConfigurationSection: () => ({
         debug: {
           buildSettings: {
@@ -87,6 +116,11 @@ describe('with-ios-share-into-app', () => {
       extensionBundleIdentifier: 'com.gtstewart16.recipeorganizer.share',
     });
 
+    expect(sourceFiles).toContainEqual({
+      file: 'KitchenShelf/KitchenShelfPendingShare.m',
+      options: { target: 'APP_TARGET' },
+      group: 'APP_GROUP',
+    });
     expect(calls).toContainEqual({
       files: [`${SHARE_EXTENSION_NAME}/ShareViewController.swift`],
       type: 'PBXSourcesBuildPhase',
@@ -220,16 +254,25 @@ public class AppDelegate: ExpoAppDelegate {
     expect(patched).toContain('private let kitchenShelfPendingSharePasteboardPrefix = "kitchenshelf://share"');
     expect(patched).toContain('private let kitchenShelfShareAppGroupIdentifier = "group.com.gtstewart16.recipeorganizer"');
     expect(patched).toContain('private let kitchenShelfPendingShareDefaultsKey = "pending-share-url"');
+    expect(patched).toContain('private let kitchenShelfPendingShareFileName = "pending-share-url.txt"');
     expect(patched).toContain(
       'private let kitchenShelfPendingSharePasteboardName = UIPasteboard.Name("com.gtstewart16.recipeorganizer.pending-share")'
     );
     expect(patched).toContain('public override func applicationDidBecomeActive(_ application: UIApplication)');
     expect(patched).toContain('UserDefaults(suiteName: kitchenShelfShareAppGroupIdentifier)');
-    expect(patched).toContain('pendingShareDefaults.removeObject(forKey: kitchenShelfPendingShareDefaultsKey)');
+    expect(patched).toContain('deliverKitchenShelfPendingShare(pendingShareURL, remainingAttempts: 6)');
+    expect(patched).toContain('DispatchQueue.main.asyncAfter(deadline: .now() + 0.75)');
+    expect(patched).toContain('pendingShareDefaults.removeObject(forKey: self.kitchenShelfPendingShareDefaultsKey)');
+    expect(patched).toContain('containerURL(forSecurityApplicationGroupIdentifier: kitchenShelfShareAppGroupIdentifier)');
+    expect(patched).toContain('try? FileManager.default.removeItem(at: pendingShareFileURL)');
+    expect(patched.indexOf('deliverKitchenShelfPendingShare(pendingShareURL, remainingAttempts: 6)')).toBeLessThan(
+      patched.indexOf('pendingShareDefaults.removeObject(forKey: self.kitchenShelfPendingShareDefaultsKey)')
+    );
     expect(patched).toContain('UIPasteboard(name: kitchenShelfPendingSharePasteboardName, create: false)');
     expect(patched).toContain('pendingSharePasteboard.string?.trimmingCharacters');
-    expect(patched).toContain('pendingSharePasteboard.string = ""');
-    expect(patched).toContain('RCTLinkingManager.application(application, open: pendingShareURL, options: [:])');
+    expect(patched).toContain('RCTLinkingManager.application(UIApplication.shared, open: pendingShareURL, options: [:])');
+    expect(patched).not.toContain('@objc(KitchenShelfPendingShare)');
+    expect(patched).not.toContain('RCTBridgeModule');
   });
 
   it('patches the app delegate idempotently', () => {
@@ -275,11 +318,13 @@ public class AppDelegate: ExpoAppDelegate {
       'pending-share-url'
     );
 
-    expect(patched.match(/kitchenShelfPendingSharePasteboardPrefix/g)).toHaveLength(3);
+    expect(patched.match(/kitchenShelfPendingSharePasteboardPrefix/g)).toHaveLength(4);
     expect(patched.match(/kitchenShelfPendingSharePasteboardName/g)).toHaveLength(2);
-    expect(patched.match(/kitchenShelfShareAppGroupIdentifier/g)).toHaveLength(2);
+    expect(patched.match(/kitchenShelfShareAppGroupIdentifier/g)).toHaveLength(3);
     expect(patched.match(/kitchenShelfPendingShareDefaultsKey/g)).toHaveLength(3);
+    expect(patched.match(/kitchenShelfPendingShareFileName/g)).toHaveLength(2);
     expect(patched.match(/public override func applicationDidBecomeActive/g)).toHaveLength(1);
+    expect(patched).not.toContain('@objc(KitchenShelfPendingShare)');
   });
 
   it('migrates an existing general pasteboard fallback to the named share pasteboard', () => {
