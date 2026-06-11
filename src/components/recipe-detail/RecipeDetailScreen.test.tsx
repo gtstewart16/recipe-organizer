@@ -62,6 +62,8 @@ describe('RecipeDetailScreen', () => {
     expect(screen.getByText('Directions')).toBeTruthy();
     expect(screen.getByText('Edit recipe')).toBeTruthy();
     expect(screen.getByText('Delete recipe')).toBeTruthy();
+    expect(screen.getByText('Source')).toBeTruthy();
+    expect(screen.getByText('example.com')).toBeTruthy();
     expect(screen.getByText('Open original recipe')).toBeTruthy();
     expect(screen.getByTestId('recipe-detail-hero-image')).toBeTruthy();
     expect(screen.getByLabelText('Close recipe detail')).toBeTruthy();

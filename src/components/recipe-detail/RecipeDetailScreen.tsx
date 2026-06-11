@@ -45,6 +45,7 @@ export function RecipeDetailScreen({
     { label: 'Prep', value: formatRecipeDuration(recipe.prepTime) ?? '—' },
     { label: 'Cook', value: formatRecipeDuration(recipe.cookTime) ?? '—' },
   ];
+  const sourceHost = recipe.sourceUrl ? formatSourceHost(recipe.sourceUrl) : null;
 
   return (
     <View style={styles.screen} testID="recipe-detail-screen">
@@ -121,9 +122,13 @@ export function RecipeDetailScreen({
           </View>
 
           {recipe.sourceUrl && onOpenSource ? (
-            <InteractivePressable accessibilityRole="button" onPress={onOpenSource} style={styles.sourceButton}>
-              <Text style={styles.sourceLink}>Open original recipe</Text>
-            </InteractivePressable>
+            <View style={styles.sourceBlock}>
+              <Text style={styles.sectionLabel}>Source</Text>
+              {sourceHost ? <Text style={styles.sourceHost}>{sourceHost}</Text> : null}
+              <InteractivePressable accessibilityRole="button" onPress={onOpenSource} style={styles.sourceButton}>
+                <Text style={styles.sourceLink}>Open original recipe</Text>
+              </InteractivePressable>
+            </View>
           ) : null}
 
           <RecipeIngredientsSection ingredients={recipe.ingredients} />
@@ -306,9 +311,25 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     paddingBottom: spacing.xxs,
   },
+  sourceBlock: {
+    gap: spacing.xs,
+  },
+  sourceHost: {
+    color: colors.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
+  },
   sourceLink: {
     color: colors.accentPressed,
     fontSize: 15,
     fontWeight: '800',
   },
 });
+
+function formatSourceHost(sourceUrl: string) {
+  try {
+    return new URL(sourceUrl).host.replace(/^www\./, '');
+  } catch {
+    return sourceUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  }
+}
