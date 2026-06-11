@@ -918,6 +918,64 @@ describe('Recipe Organizer app', () => {
     expect(screen.getByDisplayValue('Edited Cacio E Pepe')).toBeTruthy();
   });
 
+  it('persists edited review draft details when the app backgrounds before resuming import history', async () => {
+    let appStateListener: ((state: AppStateStatus) => void) | undefined;
+    const addEventListenerSpy = jest
+      .spyOn(AppState, 'addEventListener')
+      .mockImplementation((type, listener) => {
+        if (type === 'change') {
+          appStateListener = listener;
+        }
+
+        return { remove: jest.fn() };
+      });
+
+    const rendered = await renderAppToSignInGate();
+    await signInToLibrary();
+
+    await pressPrimaryTab('Add');
+    fireEvent.changeText(
+      screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
+      'https://example.com/cacio-e-pepe'
+    );
+    fireEvent.press(screen.getByText('Create review draft'));
+
+    expect(await screen.findByText('Review import')).toBeTruthy();
+    fireEvent.changeText(screen.getByDisplayValue('Cacio E Pepe'), 'Backgrounded Cacio E Pepe');
+
+    await act(async () => {
+      appStateListener?.('background');
+    });
+
+    await waitFor(() => {
+      expect(mockRepository.upsertImportJob).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          status: 'in_review',
+          draft: expect.objectContaining({
+            title: 'Backgrounded Cacio E Pepe',
+          }),
+        })
+      );
+    });
+
+    const persistedJob = mockRepository.upsertImportJob.mock.calls.at(-1)?.[0] as ImportJob;
+    rendered.unmount();
+    mockLoadAuthSession.mockResolvedValue(true);
+    mockRepository.loadState.mockResolvedValue({
+      ...mockCloudState,
+      importJobs: [persistedJob],
+    });
+
+    render(<App />);
+    expect(await screen.findByTestId('recipes-scroll-view')).toBeTruthy();
+    await pressPrimaryTab('Add');
+    fireEvent.press(await screen.findByText('Resume review'));
+
+    expect(screen.getByDisplayValue('Backgrounded Cacio E Pepe')).toBeTruthy();
+
+    addEventListenerSpy.mockRestore();
+  });
+
   it('resumes an in-review import from import history', async () => {
     await renderAppToSignInGate();
     await signInToLibrary();

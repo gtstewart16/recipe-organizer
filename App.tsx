@@ -279,8 +279,14 @@ export default function App() {
     }
 
     const subscription = AppState.addEventListener('change', (nextAppState) => {
+      const isLeavingActive = /inactive|background/.test(nextAppState);
       const wasBackgrounded = /inactive|background/.test(lastAppStateRef.current);
       lastAppStateRef.current = nextAppState;
+
+      if (isLeavingActive && refreshTarget === 'add-review' && reviewDraft) {
+        void persistActiveReviewDraft(reviewDraft);
+        return;
+      }
 
       if (!wasBackgrounded || nextAppState !== 'active' || !hydrated || refreshTarget === 'add-review') {
         return;
@@ -292,7 +298,7 @@ export default function App() {
     return () => {
       subscription?.remove?.();
     };
-  }, [cloudRepository, hydrated, refreshTarget, signedIn]);
+  }, [cloudRepository, hydrated, refreshTarget, reviewDraft, signedIn]);
 
   const visibleRecipes = useMemo(() => selectFilteredRecipes(state, searchQuery), [searchQuery, state]);
   const importHistory = useMemo(() => selectImportHistory(state), [state]);
