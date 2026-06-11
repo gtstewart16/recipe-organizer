@@ -86,7 +86,7 @@ describe('processPendingSharedImport', () => {
 
     expect(result.status).toBe('failed');
     expect(result.errorMessage).toBe(
-      'Kitchen Shelf hit the recipe parser rate limit. Please wait about 36 seconds, then tap Retry.'
+      'Kitchen Shelf hit the recipe parser rate limit. Please wait about 36 seconds, then tap Try again.'
     );
     expect(result.errorMessage).not.toContain('gpt-4.1-mini');
     expect(result.errorMessage).not.toContain('org-example');

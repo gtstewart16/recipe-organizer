@@ -261,10 +261,10 @@ async function normalizeRecipeWithOpenAI(request: ImportRecipeRequest): Promise<
 
 function formatOpenAIError(status: number, errorText: string) {
   if (status === 429 || /rate[_ -]?limit|tokens per min|Please try again in/i.test(errorText)) {
-    return 'Kitchen Shelf hit the recipe parser rate limit. Please wait about a minute, then tap Retry.';
+    return 'Kitchen Shelf hit the recipe parser rate limit. Please wait about a minute, then tap Try again.';
   }
 
-  return 'Kitchen Shelf could not finish parsing this recipe right now. Please tap Retry in a minute.';
+  return 'Kitchen Shelf could not finish parsing this recipe right now. Please tap Try again in a minute.';
 }
 
 function buildResponse(request: ImportRecipeRequest, normalized: OpenAIRecipe): ImportRecipeResponse {
