@@ -226,6 +226,8 @@ export default function App() {
 
     if (showRefreshing) {
       setIsRefreshing(true);
+      setRefreshError(null);
+      setSyncError(null);
     }
 
     try {

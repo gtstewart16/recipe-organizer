@@ -404,6 +404,48 @@ describe('Recipe Organizer app', () => {
     );
   });
 
+  it('clears stale sync issue copy while retrying a failed refresh', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    let resolveRetry: ((state: RecipeBookState) => void) | undefined;
+    const retryLoad = new Promise<RecipeBookState>((resolve) => {
+      resolveRetry = resolve;
+    });
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    mockRepository.loadState.mockRejectedValueOnce(new Error('Network request failed.'));
+    mockRepository.loadState.mockImplementationOnce(async () => retryLoad);
+
+    await act(async () => {
+      screen.getByTestId('recipes-scroll-view').props.refreshControl.props.onRefresh();
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText('Refresh paused')).toBeTruthy();
+    fireEvent.press(screen.getByText('View sync issue'));
+
+    const tryAgainAction = alertSpy.mock.calls[0]?.[2]?.find((action) => action.text === 'Try again');
+    expect(tryAgainAction).toBeDefined();
+
+    await act(async () => {
+      tryAgainAction?.onPress?.();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('Refreshing your shared library')).toBeTruthy();
+    expect(screen.queryByText('Refresh paused')).toBeNull();
+
+    await act(async () => {
+      resolveRetry?.(mockCloudState);
+      await retryLoad;
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Refreshing your shared library')).toBeNull();
+    });
+  });
+
   it('opens settings from the top-right utility button', async () => {
     await renderAppToSignInGate();
     await signInToLibrary();
