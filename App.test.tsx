@@ -669,6 +669,42 @@ describe('Recipe Organizer app', () => {
     );
   });
 
+  it('stores a concise retry message when URL import hits the parser rate limit', async () => {
+    mockImportRecipeFromUrl.mockRejectedValueOnce(
+      new Error(
+        'OpenAI normalization failed: { "error": { "message": "Rate limit reached for gpt-4.1-mini in organization org-example on tokens per min (TPM): Limit 200000, Used 200000, Requested 119506. Please try again in 35.851s.", "type": "tokens", "code": "rate_limit_exceeded" } }'
+      )
+    );
+    mockRepository.upsertImportJob.mockImplementation(async (job) => ({
+      ...mockCloudState,
+      importJobs: [job],
+    }));
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    await pressPrimaryTab('Add');
+    fireEvent.changeText(
+      screen.getByPlaceholderText('https://example.com/cacio-e-pepe'),
+      'https://www.skinnytaste.com/chicken-corn-chowder'
+    );
+    fireEvent.press(screen.getByText('Create review draft'));
+
+    const friendlyMessage =
+      'Kitchen Shelf hit the recipe parser rate limit. Please wait about 36 seconds, then tap Try again.';
+    expect(await screen.findByText('Recipe link import needs attention')).toBeTruthy();
+    expect(screen.getAllByText(friendlyMessage).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/gpt-4\.1-mini|org-example|200000/)).toBeNull();
+    expect(mockRepository.upsertImportJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceType: 'url',
+        sourceUrl: 'https://www.skinnytaste.com/chicken-corn-chowder',
+        status: 'failed',
+        errorMessage: friendlyMessage,
+      })
+    );
+  });
+
   it('shows shared-library sync status on the Recipes tab when cloud sync is enabled', async () => {
     await renderAppToSignInGate();
     await signInToLibrary();

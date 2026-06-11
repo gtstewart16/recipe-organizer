@@ -1,5 +1,6 @@
 import { importRecipeFromSharedText } from '../../services/shared-text-import';
 import { importRecipeFromUrl } from '../../services/url-import';
+import { formatRecipeImportError } from '../../services/import-error';
 import { markSharedImportFailed, markSharedImportReady, PendingSharedImport } from './types';
 
 type SharedImportProcessorDeps = {
@@ -28,49 +29,9 @@ export async function processPendingSharedImport(
 
     return markSharedImportReady(record, draft);
   } catch (error) {
-    const message = formatSharedImportError(error);
+    const message = formatRecipeImportError(error, 'We could not process that shared import.');
     const status = /does not appear to contain a recipe/i.test(message) ? 'unsupported' : 'failed';
 
     return markSharedImportFailed(record, message, status);
   }
-}
-
-function formatSharedImportError(error: unknown) {
-  const message = error instanceof Error ? error.message : 'We could not process that shared import.';
-
-  if (isOpenAIRateLimitError(message)) {
-    const retrySeconds = parseRetrySeconds(message);
-
-    if (retrySeconds) {
-      return `Kitchen Shelf hit the recipe parser rate limit. Please wait about ${retrySeconds} seconds, then tap Retry.`;
-    }
-
-    return 'Kitchen Shelf hit the recipe parser rate limit. Please wait about a minute, then tap Retry.';
-  }
-
-  if (/OpenAI normalization failed/i.test(message)) {
-    return 'Kitchen Shelf could not finish parsing this recipe right now. Please tap Retry in a minute.';
-  }
-
-  return message;
-}
-
-function isOpenAIRateLimitError(message: string) {
-  return /rate[_ -]?limit|tokens per min|Please try again in/i.test(message);
-}
-
-function parseRetrySeconds(message: string) {
-  const match = message.match(/try again in ([\d.]+)s/i);
-
-  if (!match?.[1]) {
-    return undefined;
-  }
-
-  const seconds = Number(match[1]);
-
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    return undefined;
-  }
-
-  return Math.ceil(seconds);
 }

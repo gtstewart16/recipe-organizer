@@ -35,6 +35,7 @@ import type { ImportFeedbackSourceType } from './src/lib/import-feedback';
 import { createRecipeBookRepository, createSupabaseRecipeBookPersistence } from './src/lib/recipe-book-repository';
 import { parseMultilineList } from './src/lib/recipe-text';
 import { supabase } from './src/lib/supabase';
+import { formatRecipeImportError } from './src/services/import-error';
 import { importRecipeFromPhoto } from './src/services/photo-import';
 import { importRecipeFromUrl } from './src/services/url-import';
 import {
@@ -701,10 +702,10 @@ export default function App() {
         updatedAt: timestamp,
       });
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'We could not parse that recipe link. Try another page or use manual edits after import.';
+      const message = formatRecipeImportError(
+        error,
+        'We could not parse that recipe link. Try another page or use manual edits after import.'
+      );
       const jobId = existingJobId ?? createImportJobId();
       const existingJob = state.importJobs.find((job) => job.id === jobId);
 
@@ -806,10 +807,10 @@ export default function App() {
         updatedAt: timestamp,
       });
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'We could not parse that cookbook photo. Try another image or review the draft manually.';
+      const message = formatRecipeImportError(
+        error,
+        'We could not parse that cookbook photo. Try another image or review the draft manually.'
+      );
 
       setImportError(
         message
@@ -875,10 +876,10 @@ export default function App() {
         updatedAt: timestamp,
       });
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'We could not parse that cookbook photo. Try another image or review the draft manually.';
+      const message = formatRecipeImportError(
+        error,
+        'We could not parse that cookbook photo. Try another image or review the draft manually.'
+      );
       const timestamp = new Date().toISOString();
 
       setImportError(message);
