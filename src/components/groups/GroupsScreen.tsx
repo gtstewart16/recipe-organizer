@@ -126,20 +126,29 @@ export function GroupsScreen({
               <Text style={styles.secondaryButtonLabel}>Rename</Text>
             </InteractivePressable>
           </View>
-          {recipesForSelectedGroup.map((recipe) => (
-            <SwipeToDeleteRow
-              key={recipe.id}
-              actionLabel="Delete recipe"
-              actionTestID={`group-recipe-delete-${recipe.id}`}
-              contentTestID={`group-recipe-content-${recipe.id}`}
-              onAction={() => onRecipeDelete(recipe)}
-            >
-              <InteractivePressable style={styles.groupRecipeCard} onPress={() => onRecipePress(recipe.id)}>
-                <Text style={styles.groupRecipeTitle}>{recipe.title}</Text>
-                <Text style={styles.groupRecipeMeta}>{recipe.instructions[0]}</Text>
-              </InteractivePressable>
-            </SwipeToDeleteRow>
-          ))}
+          {recipesForSelectedGroup.length > 0 ? (
+            recipesForSelectedGroup.map((recipe) => (
+              <SwipeToDeleteRow
+                key={recipe.id}
+                actionLabel="Delete recipe"
+                actionTestID={`group-recipe-delete-${recipe.id}`}
+                contentTestID={`group-recipe-content-${recipe.id}`}
+                onAction={() => onRecipeDelete(recipe)}
+              >
+                <InteractivePressable style={styles.groupRecipeCard} onPress={() => onRecipePress(recipe.id)}>
+                  <Text style={styles.groupRecipeTitle}>{recipe.title}</Text>
+                  <Text style={styles.groupRecipeMeta}>{recipe.instructions[0]}</Text>
+                </InteractivePressable>
+              </SwipeToDeleteRow>
+            ))
+          ) : (
+            <View style={styles.emptyStateCard}>
+              <Text style={styles.emptyStateTitle}>No recipes in this group yet</Text>
+              <Text style={styles.emptyStateBody}>
+                Add a recipe from the Add tab, then choose this group while reviewing it.
+              </Text>
+            </View>
+          )}
         </View>
       ) : groups.length > 0 ? (
         <View style={styles.emptyStateCard}>
