@@ -974,14 +974,23 @@ export default function App() {
       return;
     }
 
-    const nextRecord = await processPendingSharedImport({
+    const processingRecord = {
       ...match,
-      status: 'pending',
+      status: 'processing' as const,
       errorMessage: undefined,
-    });
+      updatedAt: new Date().toISOString(),
+    };
 
-    await sharedImportStore.save(nextRecord);
+    await sharedImportStore.save(processingRecord);
     await refreshSharedImports();
+
+    const nextRecord = await processPendingSharedImport(processingRecord);
+
+    const didReplace = await sharedImportStore.replaceExisting(nextRecord);
+
+    if (didReplace) {
+      await refreshSharedImports();
+    }
   };
 
   const handleDismissSharedImport = async (id: string) => {
