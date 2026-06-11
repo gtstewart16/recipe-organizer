@@ -535,7 +535,7 @@ describe('Recipe Organizer app', () => {
     );
     fireEvent.press(screen.getByText('Create review draft'));
 
-    expect(await screen.findByText('Shared imports')).toBeTruthy();
+    expect(await screen.findByText('Import inbox')).toBeTruthy();
     expect(screen.getByText('Processing')).toBeTruthy();
     expect(screen.getByText('allrecipes.com')).toBeTruthy();
   });
@@ -781,7 +781,7 @@ describe('Recipe Organizer app', () => {
     await pressPrimaryTab('Add');
     expect(await screen.findByText('Needs attention')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Retry'));
+    fireEvent.press(screen.getByText('Try again'));
 
     expect(await screen.findByText('Review import')).toBeTruthy();
     expect(screen.getByDisplayValue('Cacio E Pepe')).toBeTruthy();
@@ -808,7 +808,7 @@ describe('Recipe Organizer app', () => {
     await pressPrimaryTab('Add');
     expect(await screen.findByText('Needs attention')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Retry'));
+    fireEvent.press(screen.getByText('Try again'));
 
     expect(await screen.findByText('Review import')).toBeTruthy();
     expect(screen.getByDisplayValue('Pesto Chicken and Roasted Veggie Farro Bowls')).toBeTruthy();
@@ -914,10 +914,10 @@ describe('Recipe Organizer app', () => {
     await signInToLibrary();
     await pressPrimaryTab('Add');
 
-    expect(await screen.findByText('Shared imports')).toBeTruthy();
+    expect(await screen.findByText('Import inbox')).toBeTruthy();
     expect(screen.getByText('Mushroom Risotto')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Review draft'));
+    fireEvent.press(screen.getByText('Review recipe'));
 
     expect(screen.getByText('Review import')).toBeTruthy();
     expect(screen.getByDisplayValue('Mushroom Risotto')).toBeTruthy();
@@ -1015,8 +1015,8 @@ describe('Recipe Organizer app', () => {
       await Promise.resolve();
     });
 
-    expect(await screen.findByText('Shared imports')).toBeTruthy();
-    expect(await screen.findByText('Already imported')).toBeTruthy();
+    expect(await screen.findByText('Import inbox')).toBeTruthy();
+    expect(await screen.findByText('Already saved')).toBeTruthy();
     expect(screen.getByText('Jalapeño Popper Turkey Burgers')).toBeTruthy();
     expect(screen.queryByText('Review import')).toBeNull();
 
@@ -1054,7 +1054,7 @@ describe('Recipe Organizer app', () => {
     await renderAppToSignInGate();
     await signInToLibrary();
     await pressPrimaryTab('Add');
-    fireEvent.press(await screen.findByText('Review draft'));
+    fireEvent.press(await screen.findByText('Review recipe'));
     fireEvent.press(screen.getByText('Weeknight'));
     fireEvent.press(screen.getByText('Confirm recipe'));
 
@@ -1073,7 +1073,7 @@ describe('Recipe Organizer app', () => {
     await renderAppToSignInGate();
     await signInToLibrary();
     await pressPrimaryTab('Add');
-    fireEvent.press(await screen.findByText('Review draft'));
+    fireEvent.press(await screen.findByText('Review recipe'));
     fireEvent.press(screen.getByText('Weeknight'));
     fireEvent.press(screen.getByText('Confirm recipe'));
 
@@ -1102,7 +1102,7 @@ describe('Recipe Organizer app', () => {
     await renderAppToSignInGate();
     await signInToLibrary();
     await pressPrimaryTab('Add');
-    fireEvent.press(await screen.findByText('Review draft'));
+    fireEvent.press(await screen.findByText('Review recipe'));
     fireEvent.press(screen.getByText('Weeknight'));
     fireEvent.press(screen.getByText('Confirm recipe'));
 
@@ -1116,18 +1116,18 @@ describe('Recipe Organizer app', () => {
     await renderAppToSignInGate();
     await signInToLibrary();
     await pressPrimaryTab('Add');
-    fireEvent.press(await screen.findByText('Review draft'));
+    fireEvent.press(await screen.findByText('Review recipe'));
     fireEvent.press(screen.getByText('Weeknight'));
     fireEvent.press(screen.getByText('Back to import'));
 
-    expect(await screen.findByText('Shared imports')).toBeTruthy();
+    expect(await screen.findByText('Import inbox')).toBeTruthy();
     expect(storage.read()[0].draft).toEqual(
       expect.objectContaining({
         selectedGroupIds: ['group-weeknight'],
       })
     );
 
-    fireEvent.press(screen.getByText('Review draft'));
+    fireEvent.press(screen.getByText('Review recipe'));
     fireEvent.press(screen.getByText('Confirm recipe'));
 
     expect(await screen.findByPlaceholderText('Rename group')).toBeTruthy();
@@ -1141,7 +1141,7 @@ describe('Recipe Organizer app', () => {
     await renderAppToSignInGate();
     await signInToLibrary();
     await pressPrimaryTab('Add');
-    fireEvent.press(await screen.findByText('Review draft'));
+    fireEvent.press(await screen.findByText('Review recipe'));
     fireEvent.press(screen.getByText('Weeknight'));
     fireEvent.press(screen.getByText('Confirm recipe'));
 

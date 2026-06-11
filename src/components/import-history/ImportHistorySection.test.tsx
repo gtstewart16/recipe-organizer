@@ -77,7 +77,8 @@ describe('ImportHistorySection', () => {
       />
     );
 
-    expect(screen.getByText('Import history')).toBeTruthy();
+    expect(screen.getByText('Recent imports')).toBeTruthy();
+    expect(screen.getByText('Resume drafts, retry failed imports, or reopen recipes you just saved.')).toBeTruthy();
     expect(screen.getByText('Needs attention')).toBeTruthy();
     expect(screen.getByText('In review')).toBeTruthy();
     expect(screen.getByText('Recently saved')).toBeTruthy();
@@ -88,7 +89,7 @@ describe('ImportHistorySection', () => {
     expect(screen.getByText('The page did not include recipe instructions.')).toBeTruthy();
     expect(screen.getByText('Cannot retry')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Retry'));
+    fireEvent.press(screen.getByText('Try again'));
     expect(onRetryImport).toHaveBeenCalledWith(failedRetryableJob);
 
     fireEvent.press(screen.getByText('Resume review'));
@@ -109,8 +110,8 @@ describe('ImportHistorySection', () => {
       />
     );
 
-    expect(screen.getByText('Import history')).toBeTruthy();
-    expect(screen.getByText('No import history yet')).toBeTruthy();
+    expect(screen.getByText('Recent imports')).toBeTruthy();
+    expect(screen.getByText('Imports you start from links, photos, or shared recipes will appear here.')).toBeTruthy();
     expect(screen.queryByText('Needs attention')).toBeNull();
     expect(screen.queryByText('In review')).toBeNull();
     expect(screen.queryByText('Recently saved')).toBeNull();

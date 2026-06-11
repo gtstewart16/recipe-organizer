@@ -66,11 +66,12 @@ describe('SharedImportQueue', () => {
       />
     );
 
-    expect(screen.getByText('Shared imports')).toBeTruthy();
+    expect(screen.getByText('Import inbox')).toBeTruthy();
+    expect(screen.getByText('Recipes shared from Safari and other apps wait here until you review them.')).toBeTruthy();
     expect(screen.getByText('Mushroom Risotto')).toBeTruthy();
     expect(screen.getByText('www.skinnytaste.com/mushroom-risotto')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Review draft'));
+    fireEvent.press(screen.getByText('Review recipe'));
     expect(onOpen).toHaveBeenCalledWith('share-ready');
   });
 
@@ -90,7 +91,7 @@ describe('SharedImportQueue', () => {
     expect(screen.getByText('Needs attention')).toBeTruthy();
     expect(screen.getByText('We could not process that shared import.')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Retry'));
+    fireEvent.press(screen.getByText('Try again'));
     expect(onRetry).toHaveBeenCalledWith('share-failed');
 
     fireEvent.press(screen.getByText('Dismiss'));
@@ -109,7 +110,7 @@ describe('SharedImportQueue', () => {
       />
     );
 
-    expect(screen.getByText('Already imported')).toBeTruthy();
+    expect(screen.getByText('Already saved')).toBeTruthy();
     expect(screen.getByText('Cacio E Pepe')).toBeTruthy();
 
     fireEvent.press(screen.getByText('Open recipe'));

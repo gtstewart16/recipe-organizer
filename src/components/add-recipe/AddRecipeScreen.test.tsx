@@ -104,7 +104,7 @@ describe('AddRecipeScreen', () => {
 
     const linkPanel = screen.getByText('From link');
     const photoPanel = screen.getByText('From photo');
-    const history = screen.getByText('Import history');
+    const history = screen.getByText('Recent imports');
 
     expect(linkPanel).toBeTruthy();
     expect(photoPanel).toBeTruthy();
@@ -133,8 +133,8 @@ describe('AddRecipeScreen', () => {
       importHistory,
     });
 
-    expect(screen.getByText('Shared imports')).toBeTruthy();
-    expect(screen.getByText('Import history')).toBeTruthy();
+    expect(screen.getByText('Import inbox')).toBeTruthy();
+    expect(screen.getByText('Recent imports')).toBeTruthy();
   });
 
   it('hides import history while reviewing a draft', () => {
@@ -144,7 +144,7 @@ describe('AddRecipeScreen', () => {
     });
 
     expect(screen.getByText('Review import')).toBeTruthy();
-    expect(screen.queryByText('Import history')).toBeNull();
+    expect(screen.queryByText('Recent imports')).toBeNull();
   });
 
   it('renders URL import feedback actions', () => {

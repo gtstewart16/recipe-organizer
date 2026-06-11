@@ -24,8 +24,14 @@ export function ImportHistorySection({
 
   return (
     <View testID="import-history-section" style={styles.panel}>
-      <Text style={styles.title}>Import history</Text>
-      {isEmpty ? <Text style={styles.emptyText}>No import history yet</Text> : null}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.title}>Recent imports</Text>
+        <Text style={styles.subtitle}>
+          {isEmpty
+            ? 'Imports you start from links, photos, or shared recipes will appear here.'
+            : 'Resume drafts, retry failed imports, or reopen recipes you just saved.'}
+        </Text>
+      </View>
 
       {history.failed.length > 0 ? (
         <HistoryGroup title="Needs attention">
@@ -38,7 +44,7 @@ export function ImportHistorySection({
                   style={styles.primaryAction}
                   onPress={() => onRetryImport(job)}
                 >
-                  <Text style={styles.primaryActionLabel}>Retry</Text>
+                  <Text style={styles.primaryActionLabel}>Try again</Text>
                 </InteractivePressable>
               ) : (
                 <Text style={styles.unavailableAction}>Cannot retry</Text>
@@ -159,7 +165,10 @@ const styles = StyleSheet.create({
     fontSize: 24,
     lineHeight: 30,
   },
-  emptyText: {
+  sectionHeader: {
+    gap: spacing.xxs,
+  },
+  subtitle: {
     color: colors.textMuted,
     fontSize: 15,
     lineHeight: 22,
