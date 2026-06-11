@@ -103,4 +103,15 @@ describe('GroupsScreen', () => {
     expect(screen.getByText('Choose a group')).toBeTruthy();
     expect(screen.getByText('Select a collection to rename it or browse its recipes.')).toBeTruthy();
   });
+
+  it('shows an empty selected-group state when the group has no recipes yet', () => {
+    renderGroupsScreen({
+      selectedGroup: groups[1],
+      recipesForSelectedGroup: [],
+      groupedRecipeCount: () => 0,
+    });
+
+    expect(screen.getByText('No recipes in this group yet')).toBeTruthy();
+    expect(screen.getByText('Add a recipe from the Add tab, then choose this group while reviewing it.')).toBeTruthy();
+  });
 });
