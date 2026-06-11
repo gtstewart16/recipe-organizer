@@ -134,6 +134,17 @@ const readySharedImport: PendingSharedImport = {
   updatedAt: '2026-06-07T10:01:00.000Z',
 };
 
+const failedSharedImport: PendingSharedImport = {
+  id: 'share-failed-url',
+  status: 'failed',
+  sourceKind: 'url',
+  sourceLabel: 'skinnytaste.com',
+  payload: { url: 'https://www.skinnytaste.com/chicken-corn-chowder' },
+  errorMessage: 'Kitchen Shelf hit the recipe parser rate limit. Please wait about a minute, then tap Try again.',
+  createdAt: '2026-06-07T10:00:00.000Z',
+  updatedAt: '2026-06-07T10:02:00.000Z',
+};
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const mockRepository = {
@@ -957,6 +968,99 @@ describe('Recipe Organizer app', () => {
 
     expect(screen.getByText('Review import')).toBeTruthy();
     expect(screen.getByDisplayValue('Mushroom Risotto')).toBeTruthy();
+  });
+
+  it('shows a failed shared import as processing immediately when retry starts', async () => {
+    const storage = seedSharedImportStorage([failedSharedImport]);
+    let resolveRetryImport: ((value: Awaited<ReturnType<typeof importRecipeFromUrl>>) => void) | undefined;
+    mockImportRecipeFromUrl.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRetryImport = resolve;
+        })
+    );
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+
+    expect(await screen.findByText('Needs attention')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Try again'));
+
+    expect(await screen.findByText('Processing')).toBeTruthy();
+    expect(screen.queryByText('Needs attention')).toBeNull();
+    expect(storage.read()[0]).toEqual(
+      expect.objectContaining({
+        id: 'share-failed-url',
+        status: 'processing',
+        payload: { url: 'https://www.skinnytaste.com/chicken-corn-chowder' },
+      })
+    );
+    expect(storage.read()[0]).not.toHaveProperty('errorMessage');
+
+    expect(mockImportRecipeFromUrl).toHaveBeenCalledWith('https://www.skinnytaste.com/chicken-corn-chowder');
+
+    await act(async () => {
+      resolveRetryImport?.({
+        title: 'Chicken Corn Chowder',
+        sourceType: 'url',
+        sourceUrl: 'https://www.skinnytaste.com/chicken-corn-chowder',
+        sourcePhotoUris: [],
+        ingredients: ['2 cups corn'],
+        instructions: ['Simmer until warm.'],
+        status: 'needs_review',
+      });
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText('Review recipe')).toBeTruthy();
+    expect(storage.read()[0]).toEqual(
+      expect.objectContaining({
+        id: 'share-failed-url',
+        status: 'ready',
+        draft: expect.objectContaining({
+          title: 'Chicken Corn Chowder',
+          sourceUrl: 'https://www.skinnytaste.com/chicken-corn-chowder',
+        }),
+      })
+    );
+  });
+
+  it('does not resurrect a shared import dismissed while retry processing finishes', async () => {
+    const storage = seedSharedImportStorage([failedSharedImport]);
+    let resolveRetryImport: ((value: Awaited<ReturnType<typeof importRecipeFromUrl>>) => void) | undefined;
+    mockImportRecipeFromUrl.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRetryImport = resolve;
+        })
+    );
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    await pressPrimaryTab('Add');
+
+    fireEvent.press(await screen.findByText('Try again'));
+    expect(await screen.findByText('Processing')).toBeTruthy();
+    fireEvent.press(screen.getByText('Dismiss'));
+    await waitFor(() => expect(storage.read()).toEqual([]));
+
+    await act(async () => {
+      resolveRetryImport?.({
+        title: 'Chicken Corn Chowder',
+        sourceType: 'url',
+        sourceUrl: 'https://www.skinnytaste.com/chicken-corn-chowder',
+        sourcePhotoUris: [],
+        ingredients: ['2 cups corn'],
+        instructions: ['Simmer until warm.'],
+        status: 'needs_review',
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(storage.read()).toEqual([]));
+    expect(screen.queryByText('Chicken Corn Chowder')).toBeNull();
   });
 
   it('queues and processes a shared import from the initial deep link', async () => {
