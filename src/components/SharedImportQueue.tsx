@@ -18,7 +18,10 @@ export function SharedImportQueue({ items, onOpen, onRetry, onDismiss }: SharedI
 
   return (
     <View testID="shared-import-queue" style={styles.panel}>
-      <Text style={styles.title}>Shared imports</Text>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.title}>Import inbox</Text>
+        <Text style={styles.subtitle}>Recipes shared from Safari and other apps wait here until you review them.</Text>
+      </View>
       <View style={styles.rows}>
         {items.map((item) => (
           <View key={item.id} style={styles.row}>
@@ -34,7 +37,7 @@ export function SharedImportQueue({ items, onOpen, onRetry, onDismiss }: SharedI
             <View style={styles.actions}>
               {item.status === 'ready' && item.draft ? (
                 <InteractivePressable style={styles.primaryAction} onPress={() => onOpen(item.id)}>
-                  <Text style={styles.primaryActionLabel}>Review draft</Text>
+                  <Text style={styles.primaryActionLabel}>Review recipe</Text>
                 </InteractivePressable>
               ) : null}
               {item.status === 'duplicate' && item.recipeId ? (
@@ -44,7 +47,7 @@ export function SharedImportQueue({ items, onOpen, onRetry, onDismiss }: SharedI
               ) : null}
               {item.status === 'failed' ? (
                 <InteractivePressable style={styles.secondaryAction} onPress={() => onRetry(item.id)}>
-                  <Text style={styles.secondaryActionLabel}>Retry</Text>
+                  <Text style={styles.secondaryActionLabel}>Try again</Text>
                 </InteractivePressable>
               ) : null}
               <InteractivePressable style={styles.secondaryAction} onPress={() => onDismiss(item.id)}>
@@ -64,7 +67,7 @@ function formatStatus(status: PendingSharedImport['status']) {
   }
 
   if (status === 'duplicate') {
-    return 'Already imported';
+    return 'Already saved';
   }
 
   if (status === 'pending' || status === 'processing') {
@@ -113,6 +116,14 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 24,
     lineHeight: 30,
+  },
+  sectionHeader: {
+    gap: spacing.xxs,
+  },
+  subtitle: {
+    color: colors.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
   },
   rows: {
     gap: spacing.sm,
