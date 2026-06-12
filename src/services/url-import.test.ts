@@ -64,6 +64,43 @@ describe('importRecipeFromUrl', () => {
     expect(draft.sourceUrl).toBe('https://example.com/cacio-e-pepe');
   });
 
+  it('preserves servings when recipe schema yield is an array', async () => {
+    const draft = await importRecipeFromUrl('https://www.skinnytaste.com/grilled-chicken-sandwich/', {
+      fetcher: async () =>
+        new Response(
+          `
+            <html>
+              <head>
+                <script type="application/ld+json">
+                  {
+                    "@context": "https://schema.org",
+                    "@type": "Recipe",
+                    "name": "Grilled Chicken Sandwich Recipe",
+                    "recipeYield": ["4", "4 servings"],
+                    "prepTime": "PT15M",
+                    "cookTime": "PT15M",
+                    "recipeIngredient": [
+                      "4 small boneless skinless chicken breasts",
+                      "4 whole wheat rolls"
+                    ],
+                    "recipeInstructions": [
+                      { "@type": "HowToStep", "text": "Grill the chicken until cooked through." }
+                    ]
+                  }
+                </script>
+              </head>
+            </html>
+          `,
+          { status: 200 }
+        ),
+    });
+
+    expect(draft.title).toBe('Grilled Chicken Sandwich Recipe');
+    expect(draft.servings).toBe('4');
+    expect(draft.prepTime).toBe('15 mins');
+    expect(draft.cookTime).toBe('15 mins');
+  });
+
   it('uses recipe schema before remote normalization for regular recipe pages', async () => {
     const normalizer = jest.fn<
       Promise<{ title: string; ingredients: string[]; instructions: string[] }>,

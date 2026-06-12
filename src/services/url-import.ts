@@ -243,7 +243,19 @@ function includesRecipeType(typeField: unknown): boolean {
 }
 
 function getString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? stripHtml(value.trim()) : undefined;
+  if (typeof value === 'string' && value.trim()) {
+    return stripHtml(value.trim());
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item === 'string' && item.trim()) {
+        return stripHtml(item.trim());
+      }
+    }
+  }
+
+  return undefined;
 }
 
 function getMetaContent(html: string, attribute: 'property' | 'name', key: string): string | undefined {
