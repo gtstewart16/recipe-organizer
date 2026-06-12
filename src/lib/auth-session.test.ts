@@ -14,12 +14,22 @@ describe('auth session helpers', () => {
     expect(AsyncStorage.getItem).toHaveBeenCalledWith(AUTH_SESSION_KEY);
   });
 
-  it('loadAuthSession returns true when any non-null signed-in session flag is stored', async () => {
-    (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce('stored-session-value');
+  it('loadAuthSession returns true when the persisted signed-in session flag is stored', async () => {
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce('true');
 
     await expect(loadAuthSession()).resolves.toBe(true);
     expect(AsyncStorage.getItem).toHaveBeenCalledWith(AUTH_SESSION_KEY);
   });
+
+  it.each(['legacy-session-value', 'false'])(
+    'loadAuthSession returns false when a corrupt signed-in session flag %s is stored',
+    async (storedValue) => {
+      (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce(storedValue);
+
+      await expect(loadAuthSession()).resolves.toBe(false);
+      expect(AsyncStorage.getItem).toHaveBeenCalledWith(AUTH_SESSION_KEY);
+    },
+  );
 
   it('loadAuthSession returns false when AsyncStorage throws', async () => {
     (AsyncStorage.getItem as jest.Mock).mockRejectedValueOnce(new Error('storage unavailable'));

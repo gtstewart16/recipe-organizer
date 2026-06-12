@@ -8,7 +8,7 @@ export async function loadAuthSession(): Promise<boolean> {
   try {
     const value = await AsyncStorage.getItem(AUTH_SESSION_KEY);
 
-    return value !== null;
+    return value === AUTH_SESSION_VALUE;
   } catch {
     return false;
   }
