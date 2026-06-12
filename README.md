@@ -121,9 +121,62 @@ The release-readiness scripts are:
 npm run typecheck
 npm run test:ci
 npm run check
+npm run release:doctor
 ```
 
-`npm run check` runs the CI test command and then TypeScript.
+`npm run check` runs the CI test command and then TypeScript. `npm run release:doctor` runs `npm run check` and verifies the public Expo config that EAS will read.
+
+## Internal Beta And TestFlight
+
+Kitchen Shelf uses EAS for repeatable iOS beta builds. There are two beta paths:
+
+- `internal`: creates an installable EAS internal-distribution build for your own device QA.
+- `testflight`: creates an App Store/TestFlight build that can be uploaded to App Store Connect and shared through TestFlight.
+
+Use the TestFlight path when your wife needs to install the app and provide feedback from her phone. If she is not an App Store Connect user on your Apple Developer team, add her as an external TestFlight tester in App Store Connect after the build is uploaded. The first external beta build for a version may require TestFlight beta review from Apple before she can install it.
+
+Before the first TestFlight upload, confirm these account prerequisites:
+
+- An active Apple Developer Program membership.
+- An Expo account signed in through EAS CLI.
+- An App Store Connect app record for `Kitchen Shelf`.
+- The iOS bundle identifier in App Store Connect matches `com.gtstewart16.recipeorganizer`.
+- TestFlight test information is filled out in App Store Connect.
+- Supabase and OpenAI credentials are configured for the backend import function you want testers to use.
+
+Run the local release gate:
+
+```sh
+npm run release:doctor
+```
+
+Sign in to Expo if needed:
+
+```sh
+npx --yes eas-cli@20.1.0 login
+```
+
+Build for TestFlight:
+
+```sh
+npm run eas:build:testflight
+```
+
+Submit the latest successful TestFlight build:
+
+```sh
+npm run eas:submit:testflight
+```
+
+After App Store Connect processes the build, create or open a TestFlight group such as `Family Beta`, add the build, and invite testers. Your wife should install Apple's TestFlight app and accept the invitation from email or the public invite link.
+
+For your own direct install testing outside TestFlight, run:
+
+```sh
+npm run eas:build:internal
+```
+
+That internal build is useful for quick device checks, but TestFlight is the better feedback path for non-developer testers.
 
 ## Release Verification
 
@@ -133,6 +186,7 @@ Before parent review or release handoff, run:
 npm run typecheck
 npm run test:ci
 npm run check
+npm run release:doctor
 npx expo config --type public
 ```
 
