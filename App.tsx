@@ -1577,6 +1577,10 @@ function SettingsCogIcon() {
       <View style={[styles.settingsCogTooth, styles.settingsCogToothVertical, styles.settingsCogToothBottom]} />
       <View style={[styles.settingsCogTooth, styles.settingsCogToothHorizontal, styles.settingsCogToothLeft]} />
       <View style={[styles.settingsCogTooth, styles.settingsCogToothHorizontal, styles.settingsCogToothRight]} />
+      <View style={[styles.settingsCogTooth, styles.settingsCogToothDiagonal, styles.settingsCogToothUpperLeft]} />
+      <View style={[styles.settingsCogTooth, styles.settingsCogToothDiagonal, styles.settingsCogToothUpperRight]} />
+      <View style={[styles.settingsCogTooth, styles.settingsCogToothDiagonal, styles.settingsCogToothLowerLeft]} />
+      <View style={[styles.settingsCogTooth, styles.settingsCogToothDiagonal, styles.settingsCogToothLowerRight]} />
       <View style={styles.settingsCogRing}>
         <View style={styles.settingsCogCenter} />
       </View>
@@ -1810,14 +1814,18 @@ const styles = StyleSheet.create({
     position: 'absolute',
   },
   settingsCogToothVertical: {
-    height: 7,
+    height: 6,
     left: 9,
     width: 4,
   },
   settingsCogToothHorizontal: {
     height: 4,
     top: 9,
-    width: 7,
+    width: 6,
+  },
+  settingsCogToothDiagonal: {
+    height: 6,
+    width: 4,
   },
   settingsCogToothTop: {
     top: 0,
@@ -1831,18 +1839,38 @@ const styles = StyleSheet.create({
   settingsCogToothRight: {
     right: 0,
   },
+  settingsCogToothUpperLeft: {
+    left: 3,
+    top: 3,
+    transform: [{ rotate: '-45deg' }],
+  },
+  settingsCogToothUpperRight: {
+    right: 3,
+    top: 3,
+    transform: [{ rotate: '45deg' }],
+  },
+  settingsCogToothLowerLeft: {
+    bottom: 3,
+    left: 3,
+    transform: [{ rotate: '45deg' }],
+  },
+  settingsCogToothLowerRight: {
+    bottom: 3,
+    right: 3,
+    transform: [{ rotate: '-45deg' }],
+  },
   settingsCogRing: {
     alignItems: 'center',
     backgroundColor: colors.surfaceWarm,
     borderColor: colors.accentPressed,
-    borderRadius: 7,
+    borderRadius: 6,
     borderWidth: 2,
-    height: 14,
+    height: 12,
     justifyContent: 'center',
-    left: 4,
+    left: 5,
     position: 'absolute',
-    top: 4,
-    width: 14,
+    top: 5,
+    width: 12,
   },
   settingsCogCenter: {
     backgroundColor: colors.accentPressed,
