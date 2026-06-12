@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
-import { RecipesHome } from './recipes-home';
+import { RecipeCard, RecipesHome } from './recipes-home';
 import type { RecipeGroup, RecipeRecord } from '../../store/recipe-book';
 
 const groups: RecipeGroup[] = [
@@ -172,5 +172,39 @@ describe('RecipesHome', () => {
 
     expect(screen.getByTestId('recipe-card-delete-recipe-1')).toBeTruthy();
     expect(screen.getByTestId('recipe-card-content-recipe-1')).toBeTruthy();
+  });
+
+  it('shows a search-empty state when a query has no matching recipes or groups', () => {
+    render(
+      <RecipesHome
+        groups={[]}
+        recipes={[]}
+        searchQuery="sourdough"
+        onSearchQueryChange={jest.fn()}
+        onGroupPress={jest.fn()}
+        onRecipePress={jest.fn()}
+        onRecipeDelete={jest.fn()}
+        favoriteGroupIds={[]}
+      />
+    );
+
+    expect(screen.getByText('No matches for "sourdough"')).toBeTruthy();
+    expect(screen.getByText('Try another search or clear the shelf to see everything again.')).toBeTruthy();
+    expect(screen.queryByText('No recipes yet')).toBeNull();
+  });
+
+  it('does not duplicate the servings unit when recipe servings already include it', () => {
+    render(
+      <RecipeCard
+        recipe={{
+          ...recipes[0],
+          servings: '4 servings',
+        }}
+        onPress={jest.fn()}
+      />
+    );
+
+    expect(screen.getAllByText('4 servings')).toHaveLength(2);
+    expect(screen.queryAllByText('4 servings servings')).toHaveLength(0);
   });
 });
