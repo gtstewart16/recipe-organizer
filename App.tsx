@@ -1553,9 +1553,37 @@ export default function App() {
 function HeaderBar({ onOpenSettings }: { onOpenSettings: () => void }) {
   return (
     <View style={styles.headerBar}>
-      <InteractivePressable accessibilityLabel="Open settings" onPress={onOpenSettings} style={styles.headerUtilityButton}>
-        <Text style={styles.headerUtilityButtonText}>Settings</Text>
+      <InteractivePressable
+        accessibilityLabel="Open settings"
+        onPress={onOpenSettings}
+        style={styles.headerUtilityButton}
+        testID="settings-cog-button"
+      >
+        <SettingsCogIcon />
       </InteractivePressable>
+    </View>
+  );
+}
+
+function SettingsCogIcon() {
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      pointerEvents="none"
+      style={styles.settingsCogIcon}
+    >
+      <View style={[styles.settingsCogTooth, styles.settingsCogToothVertical, styles.settingsCogToothTop]} />
+      <View style={[styles.settingsCogTooth, styles.settingsCogToothVertical, styles.settingsCogToothBottom]} />
+      <View style={[styles.settingsCogTooth, styles.settingsCogToothHorizontal, styles.settingsCogToothLeft]} />
+      <View style={[styles.settingsCogTooth, styles.settingsCogToothHorizontal, styles.settingsCogToothRight]} />
+      <View style={[styles.settingsCogTooth, styles.settingsCogToothDiagonal, styles.settingsCogToothUpperLeft]} />
+      <View style={[styles.settingsCogTooth, styles.settingsCogToothDiagonal, styles.settingsCogToothUpperRight]} />
+      <View style={[styles.settingsCogTooth, styles.settingsCogToothDiagonal, styles.settingsCogToothLowerLeft]} />
+      <View style={[styles.settingsCogTooth, styles.settingsCogToothDiagonal, styles.settingsCogToothLowerRight]} />
+      <View style={styles.settingsCogRing}>
+        <View style={styles.settingsCogCenter} />
+      </View>
     </View>
   );
 }
@@ -1761,20 +1789,94 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    marginBottom: spacing.lg,
-    minHeight: 36,
+    marginBottom: spacing.sm,
+    minHeight: 72,
+    paddingTop: spacing.xxl,
   },
   headerUtilityButton: {
+    alignItems: 'center',
     backgroundColor: colors.surfaceWarm,
     borderColor: colors.border,
-    borderRadius: radius.pill,
+    borderRadius: 20,
     borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
   },
-  headerUtilityButtonText: {
-    ...type.eyebrow,
-    color: colors.accentPressed,
+  settingsCogIcon: {
+    height: 22,
+    position: 'relative',
+    width: 22,
+  },
+  settingsCogTooth: {
+    backgroundColor: colors.accentPressed,
+    borderRadius: 2,
+    position: 'absolute',
+  },
+  settingsCogToothVertical: {
+    height: 6,
+    left: 9,
+    width: 4,
+  },
+  settingsCogToothHorizontal: {
+    height: 4,
+    top: 9,
+    width: 6,
+  },
+  settingsCogToothDiagonal: {
+    height: 6,
+    width: 4,
+  },
+  settingsCogToothTop: {
+    top: 0,
+  },
+  settingsCogToothBottom: {
+    bottom: 0,
+  },
+  settingsCogToothLeft: {
+    left: 0,
+  },
+  settingsCogToothRight: {
+    right: 0,
+  },
+  settingsCogToothUpperLeft: {
+    left: 3,
+    top: 3,
+    transform: [{ rotate: '-45deg' }],
+  },
+  settingsCogToothUpperRight: {
+    right: 3,
+    top: 3,
+    transform: [{ rotate: '45deg' }],
+  },
+  settingsCogToothLowerLeft: {
+    bottom: 3,
+    left: 3,
+    transform: [{ rotate: '45deg' }],
+  },
+  settingsCogToothLowerRight: {
+    bottom: 3,
+    right: 3,
+    transform: [{ rotate: '-45deg' }],
+  },
+  settingsCogRing: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceWarm,
+    borderColor: colors.accentPressed,
+    borderRadius: 6,
+    borderWidth: 2,
+    height: 12,
+    justifyContent: 'center',
+    left: 5,
+    position: 'absolute',
+    top: 5,
+    width: 12,
+  },
+  settingsCogCenter: {
+    backgroundColor: colors.accentPressed,
+    borderRadius: 2,
+    height: 4,
+    width: 4,
   },
   tabBar: {
     backgroundColor: colors.surfaceMuted,

@@ -450,6 +450,13 @@ describe('Recipe Organizer app', () => {
     await renderAppToSignInGate();
     await signInToLibrary();
 
+    expect(screen.getByTestId('settings-cog-button')).toHaveStyle({
+      borderRadius: 20,
+      height: 40,
+      width: 40,
+    });
+    expect(screen.queryByText('Settings')).toBeNull();
+
     fireEvent.press(screen.getByLabelText('Open settings'));
 
     expect(await screen.findByTestId('settings-screen')).toBeTruthy();
