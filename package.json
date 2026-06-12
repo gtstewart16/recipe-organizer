@@ -13,6 +13,10 @@
     "test:ci": "jest --runInBand",
     "check": "npm run test:ci && npm run typecheck"
   },
+  "overrides": {
+    "@xmldom/xmldom": "0.9.10",
+    "shell-quote": "1.8.4"
+  },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.15.9",
