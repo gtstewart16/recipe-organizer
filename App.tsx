@@ -38,6 +38,7 @@ import { supabase } from './src/lib/supabase';
 import { formatRecipeImportError } from './src/services/import-error';
 import { importRecipeFromPhoto } from './src/services/photo-import';
 import { importRecipeFromUrl } from './src/services/url-import';
+import { resolvePersistenceMode } from './src/lib/persistence-mode';
 import {
   createEmptyRecipeBookState,
   createRecipeBookDraftFromUrl,
@@ -53,6 +54,13 @@ import {
 import { colors, radius, shadows, spacing, type } from './src/theme';
 
 const STORAGE_KEY = 'recipe-organizer-state-v1';
+const REALTIME_SYNC_TABLES = [
+  'households',
+  'recipe_groups',
+  'recipes',
+  'recipe_group_memberships',
+  'import_jobs',
+] as const;
 
 const HOUSEHOLD_EMAIL = 'home@kitchen.test';
 const HOUSEHOLD_PASSWORD = 'password123';
@@ -69,13 +77,18 @@ type StoredPhotoAsset = {
 
 export default function App() {
   const isTestEnv = process.env.NODE_ENV === 'test';
+  const persistenceMode = resolvePersistenceMode({
+    hasCloudConfig: Boolean(supabase),
+    isDevelopment: __DEV__,
+    isTest: isTestEnv,
+  });
   const cloudRepository = useMemo(
     () => (supabase ? createRecipeBookRepository(createSupabaseRecipeBookPersistence(supabase)) : null),
     []
   );
   const [state, dispatch] = useReducer(recipeBookReducer, initialSeedState);
   const [authHydrated, setAuthHydrated] = useState(false);
-  const [hydrated, setHydrated] = useState(isTestEnv || !cloudRepository);
+  const [hydrated, setHydrated] = useState(isTestEnv || persistenceMode !== 'cloud');
   const [signedIn, setSignedIn] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('recipes');
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
@@ -106,6 +119,7 @@ export default function App() {
   const skipNextAutoRefreshTargetRef = useRef<string | null>(null);
   const didHandleInitialUrlRef = useRef(false);
   const lastAppStateRef = useRef(AppState.currentState);
+  const realtimeReloadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const markCloudSyncSuccess = () => {
     setLastSyncedAt(new Date().toISOString());
@@ -139,7 +153,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (isTestEnv || cloudRepository) {
+    if (persistenceMode !== 'local' || isTestEnv) {
       return;
     }
 
@@ -166,17 +180,17 @@ export default function App() {
     return () => {
       mounted = false;
     };
-  }, [cloudRepository, isTestEnv]);
+  }, [isTestEnv, persistenceMode]);
 
   useEffect(() => {
-    if (!hydrated || cloudRepository) {
+    if (!hydrated || persistenceMode !== 'local') {
       return;
     }
 
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch(() => {
       // Ignore local persistence failures and keep the in-memory session usable.
     });
-  }, [cloudRepository, hydrated, state]);
+  }, [hydrated, persistenceMode, state]);
 
   useEffect(() => {
     if (!signedIn || !cloudRepository) {
@@ -245,6 +259,21 @@ export default function App() {
     }
   };
 
+  const scheduleCloudReload = useCallback(() => {
+    if (!cloudRepository || !signedIn || !hydrated || refreshTarget === 'add-review') {
+      return;
+    }
+
+    if (realtimeReloadTimeoutRef.current) {
+      clearTimeout(realtimeReloadTimeoutRef.current);
+    }
+
+    realtimeReloadTimeoutRef.current = setTimeout(() => {
+      realtimeReloadTimeoutRef.current = null;
+      void reloadCloudState();
+    }, 250);
+  }, [cloudRepository, hydrated, refreshTarget, signedIn]);
+
   const showSyncIssue = () => {
     const message = refreshError ?? syncError ?? 'We could not refresh your shared library.';
     const title = refreshError ? 'Refresh paused' : 'Sync paused';
@@ -301,6 +330,42 @@ export default function App() {
       subscription?.remove?.();
     };
   }, [cloudRepository, hydrated, refreshTarget, reviewDraft, signedIn]);
+
+  useEffect(() => {
+    if (!signedIn || !supabase) {
+      return;
+    }
+
+    const realtimeClient = supabase;
+    const channel = REALTIME_SYNC_TABLES.reduce(
+      (currentChannel, table) =>
+        currentChannel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table,
+          },
+          () => {
+            scheduleCloudReload();
+          }
+        ),
+      realtimeClient.channel('recipe-book-sync')
+    ).subscribe((status) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        setRefreshError('Live sync disconnected. Pull to refresh or reopen the app.');
+      }
+    });
+
+    return () => {
+      if (realtimeReloadTimeoutRef.current) {
+        clearTimeout(realtimeReloadTimeoutRef.current);
+        realtimeReloadTimeoutRef.current = null;
+      }
+
+      void realtimeClient.removeChannel(channel);
+    };
+  }, [scheduleCloudReload, signedIn]);
 
   const visibleRecipes = useMemo(() => selectFilteredRecipes(state, searchQuery), [searchQuery, state]);
   const importHistory = useMemo(() => selectImportHistory(state), [state]);
@@ -1325,6 +1390,24 @@ export default function App() {
               state="loading"
               title="Restoring your household session"
               message="We’re checking whether this device already has access to the shared kitchen library."
+            />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (persistenceMode === 'configuration_error') {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="dark" />
+        <View style={styles.appShell}>
+          <HeaderBar onOpenSettings={() => setIsSettingsOpen(true)} />
+          <View style={styles.panel}>
+            <CloudSyncStatus
+              state="error"
+              title="Cloud library unavailable"
+              message="This TestFlight build is missing its Supabase configuration. Install the next available build."
             />
           </View>
         </View>

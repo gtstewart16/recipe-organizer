@@ -42,6 +42,13 @@ describe('with-ios-share-into-app', () => {
     expect(controller).toContain('urlLabel.text = previewValue');
     expect(controller).toContain('appScheme + "://share?url="');
     expect(controller).toContain('appScheme + "://share?text="');
+    expect(controller).toContain('loadFallbackItem(from: attachments, previewTitle: previewTitle)');
+    expect(controller).toContain('UTType.propertyList.identifier');
+    expect(controller).toContain('UTType.item.identifier');
+    expect(controller).toContain('UTType.data.identifier');
+    expect(controller).toContain('extractSharedPayload(from item: Any?) -> (queryName: String, value: String)?');
+    expect(controller).toContain('extractPayloadFromDictionary(_ dictionary: [AnyHashable: Any])');
+    expect(controller).toContain('extractPayloadFromArray(_ array: [Any])');
     expect(controller).toContain('extensionContext?.open(deepLinkURL');
     expect(controller.indexOf('storePendingShare(deepLinkURL)')).toBeLessThan(
       controller.indexOf('extensionContext?.open(deepLinkURL')

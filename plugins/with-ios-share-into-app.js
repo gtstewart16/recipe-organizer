@@ -136,6 +136,10 @@ final class ShareViewController: UIViewController {
       return
     }
 
+    if loadFallbackItem(from: attachments, previewTitle: previewTitle) {
+      return
+    }
+
     showUnsupportedShare()
   }
 
@@ -164,6 +168,145 @@ final class ShareViewController: UIViewController {
     }
 
     return true
+  }
+
+  private func loadFallbackItem(from attachments: [NSItemProvider], previewTitle: String) -> Bool {
+    let fallbackTypeIdentifiers = [
+      UTType.propertyList.identifier,
+      UTType.item.identifier,
+      UTType.data.identifier,
+    ]
+
+    for typeIdentifier in fallbackTypeIdentifiers {
+      guard let provider = attachments.first(where: { $0.hasItemConformingToTypeIdentifier(typeIdentifier) }) else {
+        continue
+      }
+
+      provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { [weak self] item, _ in
+        let payload = self?.extractSharedPayload(from: item)
+
+        DispatchQueue.main.async {
+          guard let payload else {
+            self?.showUnsupportedShare()
+            return
+          }
+
+          self?.prepareShare(queryName: payload.queryName, value: payload.value, previewTitle: previewTitle)
+        }
+      }
+
+      return true
+    }
+
+    return false
+  }
+
+  private func extractSharedPayload(from item: Any?) -> (queryName: String, value: String)? {
+    if let url = item as? URL {
+      return ("url", url.absoluteString)
+    }
+
+    if let url = item as? NSURL, let value = url.absoluteString {
+      return ("url", value)
+    }
+
+    if let text = item as? String {
+      return extractPayloadFromText(text)
+    }
+
+    if let text = item as? NSString {
+      return extractPayloadFromText(text as String)
+    }
+
+    if let attributedText = item as? NSAttributedString {
+      return extractPayloadFromText(attributedText.string)
+    }
+
+    if let dictionary = item as? [AnyHashable: Any] {
+      return extractPayloadFromDictionary(dictionary)
+    }
+
+    if let array = item as? [Any] {
+      return extractPayloadFromArray(array)
+    }
+
+    if let data = item as? Data, let text = String(data: data, encoding: .utf8) {
+      return extractPayloadFromText(text)
+    }
+
+    if let data = item as? NSData, let text = String(data: data as Data, encoding: .utf8) {
+      return extractPayloadFromText(text)
+    }
+
+    return nil
+  }
+
+  private func extractPayloadFromDictionary(_ dictionary: [AnyHashable: Any]) -> (queryName: String, value: String)? {
+    let preferredKeys = [
+      "URL",
+      "url",
+      "public.url",
+      "NSExtensionJavaScriptPreprocessingResultsKey",
+      "text",
+      "title",
+      "name",
+    ]
+
+    for key in preferredKeys {
+      if let payload = extractSharedPayload(from: dictionary[key]) {
+        return payload
+      }
+    }
+
+    for value in dictionary.values {
+      if let payload = extractSharedPayload(from: value) {
+        return payload
+      }
+    }
+
+    return nil
+  }
+
+  private func extractPayloadFromArray(_ array: [Any]) -> (queryName: String, value: String)? {
+    for item in array {
+      if let payload = extractSharedPayload(from: item) {
+        return payload
+      }
+    }
+
+    return nil
+  }
+
+  private func extractPayloadFromText(_ text: String) -> (queryName: String, value: String)? {
+    let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedText.isEmpty else {
+      return nil
+    }
+
+    if let url = firstHttpUrl(in: trimmedText) {
+      return ("url", url)
+    }
+
+    return ("text", trimmedText)
+  }
+
+  private func firstHttpUrl(in text: String) -> String? {
+    guard
+      let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+    else {
+      return nil
+    }
+
+    let range = NSRange(text.startIndex..<text.endIndex, in: text)
+    let match = detector.firstMatch(in: text, options: [], range: range)
+    guard
+      let url = match?.url,
+      url.scheme == "http" || url.scheme == "https"
+    else {
+      return nil
+    }
+
+    return url.absoluteString
   }
 
   private func preferredTitle(from item: NSExtensionItem) -> String {

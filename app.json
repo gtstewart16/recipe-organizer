@@ -14,11 +14,19 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "appleTeamId": "2GTT7CXQX9",
       "bundleIdentifier": "com.gtstewart16.recipeorganizer",
       "supportsTablet": true,
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.gtstewart16.recipeorganizer"
+        ]
+      },
       "infoPlist": {
-        "NSCameraUsageDescription": "Kitchen Shelf uses the camera to capture cookbook recipes."
-      }
+        "NSCameraUsageDescription": "Kitchen Shelf uses the camera to capture cookbook recipes.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "buildNumber": "5"
     },
     "android": {
       "adaptiveIcon": {
@@ -34,7 +42,27 @@
     "extra": {
       "expoPublicSupabaseUrl": "",
       "expoPublicSupabaseAnonKey": "",
-      "expoPublicSupabaseImportFunctionUrl": ""
+      "expoPublicSupabaseImportFunctionUrl": "",
+      "eas": {
+        "projectId": "633f5d37-b6ee-4a9b-afe1-500824c1ed2e",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "KitchenShelfShare",
+                  "bundleIdentifier": "com.gtstewart16.recipeorganizer.share",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.gtstewart16.recipeorganizer"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
     },
     "plugins": [
       [

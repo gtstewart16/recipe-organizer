@@ -13,19 +13,25 @@
     },
     "testflight": {
       "distribution": "store",
+      "environment": "production",
       "autoIncrement": true
     },
     "production": {
       "distribution": "store",
+      "environment": "production",
       "autoIncrement": true
     }
   },
   "submit": {
     "testflight": {
-      "ios": {}
+      "ios": {
+        "ascAppId": "6792205270"
+      }
     },
     "production": {
-      "ios": {}
+      "ios": {
+        "ascAppId": "6792205270"
+      }
     }
   }
 }

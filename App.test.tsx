@@ -198,9 +198,21 @@ jest.mock('expo-file-system', () => ({
   readAsStringAsync: jest.fn(async () => 'ZmFrZS1yZXRyeS1pbWFnZQ=='),
 }));
 
-jest.mock('./src/lib/supabase', () => ({
-  supabase: {},
-}));
+jest.mock('./src/lib/supabase', () => {
+  const channel = {
+    on: jest.fn(),
+    subscribe: jest.fn(),
+  };
+  channel.on.mockReturnValue(channel);
+  channel.subscribe.mockReturnValue(channel);
+
+  return {
+    supabase: {
+      channel: jest.fn(() => channel),
+      removeChannel: jest.fn(async () => undefined),
+    },
+  };
+});
 
 jest.mock('./src/lib/recipe-book-repository', () => ({
   createSupabaseRecipeBookPersistence: jest.fn(() => ({})),
