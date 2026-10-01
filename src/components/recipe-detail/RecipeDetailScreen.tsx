@@ -1,4 +1,5 @@
 import { useContext, useState } from 'react';
+import { StatusBar } from 'expo-status-bar';
 import { Image, ImageBackground, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
@@ -157,6 +158,7 @@ export function RecipeDetailScreen({
           visible={isPhotoOpen}
         >
           <View style={styles.photoViewer} testID="recipe-photo-viewer">
+            {isPhotoOpen ? <StatusBar style="light" /> : null}
             <Image
               accessibilityLabel={`${recipe.title} full photo`}
               resizeMode="contain"
