@@ -115,6 +115,7 @@ export default function App() {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [lastImportSourceType, setLastImportSourceType] = useState<ImportFeedbackSourceType | null>(null);
   const [lastPhotoMode, setLastPhotoMode] = useState<'camera' | 'library'>('library');
+  const [isReplacingRecipePhoto, setIsReplacingRecipePhoto] = useState(false);
   const previousRefreshTargetRef = useRef<string | null>(null);
   const skipNextAutoRefreshTargetRef = useRef<string | null>(null);
   const didHandleInitialUrlRef = useRef(false);
@@ -1223,6 +1224,59 @@ export default function App() {
     setActiveTab('add');
   };
 
+  const replaceRecipePhoto = async (recipe: RecipeRecord) => {
+    setIsReplacingRecipePhoto(true);
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        allowsMultipleSelection: false,
+        mediaTypes: ['images'],
+        quality: 0.9,
+      });
+
+      if (result.canceled || result.assets.length === 0) {
+        return;
+      }
+
+      const updatedDraft: RecipeDraft = {
+        title: recipe.title,
+        description: recipe.description,
+        heroImageUri: result.assets[0].uri,
+        sourceType: recipe.sourceType,
+        sourceUrl: recipe.sourceUrl,
+        sourcePhotoUris: recipe.sourcePhotoUris,
+        ingredients: recipe.ingredients,
+        instructions: recipe.instructions,
+        servings: recipe.servings,
+        prepTime: recipe.prepTime,
+        cookTime: recipe.cookTime,
+        status: recipe.status,
+      };
+      const groupIds = state.memberships
+        .filter((membership) => membership.recipeId === recipe.id)
+        .map((membership) => membership.groupId);
+
+      if (cloudRepository) {
+        const nextState = await cloudRepository.updateRecipe(recipe.id, updatedDraft, groupIds);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
+      } else {
+        dispatch({
+          type: 'recipe/updated',
+          payload: { recipeId: recipe.id, draft: updatedDraft, groupIds },
+        });
+      }
+    } catch (error) {
+      Alert.alert(
+        'Could not replace photo',
+        error instanceof Error ? error.message : 'We could not open or save that photo. Please try again.'
+      );
+    } finally {
+      setIsReplacingRecipePhoto(false);
+    }
+  };
+
   const handleDeleteRecipe = async (recipeId: string) => {
     try {
       if (cloudRepository) {
@@ -1622,6 +1676,8 @@ export default function App() {
               onClose={() => setSelectedRecipeId(null)}
               onEdit={() => beginRecipeEdit(selectedRecipe)}
               onDelete={() => confirmDeleteRecipe(selectedRecipe)}
+              onReplacePhoto={() => void replaceRecipePhoto(selectedRecipe)}
+              isReplacingPhoto={isReplacingRecipePhoto}
               onOpenSource={
                 selectedRecipe.sourceUrl ? () => Linking.openURL(selectedRecipe.sourceUrl!) : undefined
               }

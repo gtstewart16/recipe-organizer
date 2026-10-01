@@ -44,6 +44,7 @@ describe('RecipeDetailScreen', () => {
         onEdit={onEdit}
         onDelete={onDelete}
         onOpenSource={onOpenSource}
+        onReplacePhoto={jest.fn()}
       />
     );
 
@@ -92,6 +93,7 @@ describe('RecipeDetailScreen', () => {
         onClose={jest.fn()}
         onEdit={jest.fn()}
         onDelete={jest.fn()}
+        onReplacePhoto={jest.fn()}
       />
     );
 
@@ -112,6 +114,7 @@ describe('RecipeDetailScreen', () => {
         onClose={jest.fn()}
         onEdit={jest.fn()}
         onDelete={jest.fn()}
+        onReplacePhoto={jest.fn()}
       />
     );
 
@@ -120,6 +123,31 @@ describe('RecipeDetailScreen', () => {
     expect(screen.getByText('Prep')).toBeTruthy();
     expect(screen.getByText('Cook')).toBeTruthy();
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('opens the full photo and offers to replace it', () => {
+    const onReplacePhoto = jest.fn();
+
+    render(
+      <RecipeDetailScreen
+        recipe={recipe}
+        onClose={jest.fn()}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+        onReplacePhoto={onReplacePhoto}
+      />
+    );
+
+    fireEvent.press(screen.getByLabelText('View recipe photo'));
+
+    expect(screen.getByTestId('recipe-photo-viewer')).toBeTruthy();
+    expect(screen.getByLabelText(`${recipe.title} full photo`)).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('Replace recipe photo'));
+    expect(onReplacePhoto).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(screen.getByLabelText('Close full photo'));
+    expect(screen.queryByTestId('recipe-photo-viewer')).toBeNull();
   });
 });
 

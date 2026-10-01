@@ -1,5 +1,5 @@
-import { useContext } from 'react';
-import { ImageBackground, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useContext, useState } from 'react';
+import { Image, ImageBackground, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 import { InteractivePressable } from '../InteractivePressable';
@@ -27,6 +27,8 @@ export type RecipeDetailScreenProps = {
   onEdit: () => void;
   onDelete: () => void;
   onOpenSource?: () => void;
+  onReplacePhoto: () => void;
+  isReplacingPhoto?: boolean;
 };
 
 export function RecipeDetailScreen({
@@ -36,7 +38,10 @@ export function RecipeDetailScreen({
   onEdit,
   onDelete,
   onOpenSource,
+  onReplacePhoto,
+  isReplacingPhoto = false,
 }: RecipeDetailScreenProps) {
+  const [isPhotoOpen, setIsPhotoOpen] = useState(false);
   const insets = useContext(SafeAreaInsetsContext) ?? { top: 0, right: 0, bottom: 0, left: 0 };
   const safeTopInset = insets.top > 0 ? insets.top : 44;
   const closeOffsetTop = safeTopInset + 14;
@@ -52,17 +57,25 @@ export function RecipeDetailScreen({
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.heroShell}>
           {recipe.heroImageUri ? (
-            <ImageBackground
-              testID="recipe-detail-hero-image"
-              source={{ uri: recipe.heroImageUri }}
-              imageStyle={styles.heroImage}
+            <InteractivePressable
+              accessibilityHint="Opens the full photo and photo replacement options"
+              accessibilityLabel="View recipe photo"
+              onPress={() => setIsPhotoOpen(true)}
               style={styles.hero}
             >
-              <View style={styles.heroOverlay} />
-              <View style={styles.heroTextWrap}>
-                <Text style={styles.heroTitle}>{recipe.title}</Text>
-              </View>
-            </ImageBackground>
+              <ImageBackground
+                testID="recipe-detail-hero-image"
+                source={{ uri: recipe.heroImageUri }}
+                imageStyle={styles.heroImage}
+                style={styles.heroImageBackground}
+              >
+                <View style={styles.heroOverlay} />
+                <View style={styles.heroTextWrap}>
+                  <Text style={styles.heroTitle}>{recipe.title}</Text>
+                  <Text style={styles.photoHint}>Tap to view photo</Text>
+                </View>
+              </ImageBackground>
+            </InteractivePressable>
           ) : (
             <View testID="recipe-detail-hero-fallback" style={styles.heroFallback}>
               <Text style={styles.heroTitle}>{recipe.title}</Text>
@@ -135,6 +148,45 @@ export function RecipeDetailScreen({
           <RecipeDirectionsSection instructions={recipe.instructions} />
         </View>
       </ScrollView>
+
+      {recipe.heroImageUri ? (
+        <Modal
+          animationType="fade"
+          onRequestClose={() => setIsPhotoOpen(false)}
+          presentationStyle="fullScreen"
+          visible={isPhotoOpen}
+        >
+          <View style={styles.photoViewer} testID="recipe-photo-viewer">
+            <Image
+              accessibilityLabel={`${recipe.title} full photo`}
+              resizeMode="contain"
+              source={{ uri: recipe.heroImageUri }}
+              style={styles.fullPhoto}
+            />
+            <View style={[styles.photoViewerTop, { paddingTop: safeTopInset + spacing.sm }]}>
+              <InteractivePressable
+                accessibilityLabel="Close full photo"
+                onPress={() => setIsPhotoOpen(false)}
+                style={styles.viewerCloseButton}
+              >
+                <Text style={styles.viewerCloseLabel}>×</Text>
+              </InteractivePressable>
+            </View>
+            <View style={[styles.photoViewerActions, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
+              <InteractivePressable
+                accessibilityLabel="Replace recipe photo"
+                disabled={isReplacingPhoto}
+                onPress={onReplacePhoto}
+                style={styles.replacePhotoButton}
+              >
+                <Text style={styles.replacePhotoLabel}>
+                  {isReplacingPhoto ? 'Opening photo library…' : 'Replace photo'}
+                </Text>
+              </InteractivePressable>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </View>
   );
 }
@@ -153,6 +205,9 @@ const styles = StyleSheet.create({
   hero: {
     backgroundColor: colors.surfaceMuted,
     height: 380,
+  },
+  heroImageBackground: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   heroImage: {
@@ -208,6 +263,60 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(33, 28, 24, 0.32)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 12,
+  },
+  photoHint: {
+    color: colors.white,
+    fontSize: 13,
+    fontWeight: '700',
+    opacity: 0.9,
+  },
+  photoViewer: {
+    backgroundColor: colors.text,
+    flex: 1,
+    justifyContent: 'center',
+  },
+  fullPhoto: {
+    ...StyleSheet.absoluteFillObject,
+    height: undefined,
+    width: undefined,
+  },
+  photoViewerTop: {
+    left: spacing.lg,
+    position: 'absolute',
+    top: 0,
+  },
+  viewerCloseButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 253, 249, 0.94)',
+    borderRadius: radius.pill,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
+  viewerCloseLabel: {
+    color: colors.text,
+    fontSize: 30,
+    lineHeight: 30,
+    marginTop: -2,
+  },
+  photoViewerActions: {
+    bottom: 0,
+    left: spacing.lg,
+    position: 'absolute',
+    right: spacing.lg,
+  },
+  replacePhotoButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    minHeight: 52,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  replacePhotoLabel: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '800',
   },
   body: {
     gap: spacing.xl,

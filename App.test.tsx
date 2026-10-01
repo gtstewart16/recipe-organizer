@@ -1513,4 +1513,46 @@ describe('Recipe Organizer app', () => {
 
     alertSpy.mockRestore();
   });
+
+  it('replaces a recipe photo from the full-screen viewer and persists the change', async () => {
+    const recipeWithPhoto = {
+      ...mockCloudState.recipes[0],
+      heroImageUri: 'https://images.example.com/original-burger.jpg',
+    };
+    const stateWithPhoto = {
+      ...mockCloudState,
+      recipes: [recipeWithPhoto],
+    };
+    mockRepository.loadState.mockResolvedValue(stateWithPhoto);
+    mockRepository.updateRecipe.mockResolvedValue({
+      ...stateWithPhoto,
+      recipes: [{ ...recipeWithPhoto, heroImageUri: 'file:///cookbook-page.jpg' }],
+    });
+    const imagePicker = jest.requireMock('expo-image-picker') as {
+      launchImageLibraryAsync: jest.Mock;
+    };
+
+    await renderAppToSignInGate();
+    await signInToLibrary();
+
+    fireEvent.press(screen.getByText('Jalapeño Popper Turkey Burgers'));
+    fireEvent.press(await screen.findByLabelText('View recipe photo'));
+    expect(screen.getByTestId('recipe-photo-viewer')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Replace recipe photo'));
+    });
+
+    expect(imagePicker.launchImageLibraryAsync).toHaveBeenCalledWith({
+      allowsEditing: true,
+      allowsMultipleSelection: false,
+      mediaTypes: ['images'],
+      quality: 0.9,
+    });
+    expect(mockRepository.updateRecipe).toHaveBeenCalledWith(
+      'recipe-1',
+      expect.objectContaining({ heroImageUri: 'file:///cookbook-page.jpg' }),
+      ['group-weeknight', 'group-healthy']
+    );
+  });
 });
