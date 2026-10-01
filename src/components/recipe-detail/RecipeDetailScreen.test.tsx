@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { StatusBar } from 'react-native';
 
 import { RecipeDetailScreen } from './RecipeDetailScreen';
 import { RecipeDirectionsSection } from './RecipeDirectionsSection';
@@ -30,6 +31,28 @@ const recipe = {
 };
 
 describe('RecipeDetailScreen', () => {
+  it('uses light status icons only while the dark photo viewer is open', () => {
+    const push = jest.spyOn(StatusBar, 'pushStackEntry');
+    const pop = jest.spyOn(StatusBar, 'popStackEntry');
+    render(
+      <RecipeDetailScreen
+        recipe={recipe}
+        onClose={jest.fn()}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+        onReplacePhoto={jest.fn()}
+      />
+    );
+    expect(push).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByLabelText('View recipe photo'));
+    expect(push).toHaveBeenCalledWith(expect.objectContaining({ barStyle: 'light-content' }));
+    const viewerEntry = push.mock.results[0].value;
+    fireEvent.press(screen.getByLabelText('Close full photo'));
+    expect(pop).toHaveBeenCalledWith(viewerEntry);
+    push.mockRestore();
+    pop.mockRestore();
+  });
+
   it('renders a full-page recipe detail surface with hero, actions, and content', () => {
     const onClose = jest.fn();
     const onEdit = jest.fn();
@@ -44,6 +67,7 @@ describe('RecipeDetailScreen', () => {
         onEdit={onEdit}
         onDelete={onDelete}
         onOpenSource={onOpenSource}
+        onReplacePhoto={jest.fn()}
       />
     );
 
@@ -92,6 +116,7 @@ describe('RecipeDetailScreen', () => {
         onClose={jest.fn()}
         onEdit={jest.fn()}
         onDelete={jest.fn()}
+        onReplacePhoto={jest.fn()}
       />
     );
 
@@ -112,6 +137,7 @@ describe('RecipeDetailScreen', () => {
         onClose={jest.fn()}
         onEdit={jest.fn()}
         onDelete={jest.fn()}
+        onReplacePhoto={jest.fn()}
       />
     );
 
@@ -120,6 +146,31 @@ describe('RecipeDetailScreen', () => {
     expect(screen.getByText('Prep')).toBeTruthy();
     expect(screen.getByText('Cook')).toBeTruthy();
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('opens the full photo and offers to replace it', () => {
+    const onReplacePhoto = jest.fn();
+
+    render(
+      <RecipeDetailScreen
+        recipe={recipe}
+        onClose={jest.fn()}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+        onReplacePhoto={onReplacePhoto}
+      />
+    );
+
+    fireEvent.press(screen.getByLabelText('View recipe photo'));
+
+    expect(screen.getByTestId('recipe-photo-viewer')).toBeTruthy();
+    expect(screen.getByLabelText(`${recipe.title} full photo`)).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('Replace recipe photo'));
+    expect(onReplacePhoto).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(screen.getByLabelText('Close full photo'));
+    expect(screen.queryByTestId('recipe-photo-viewer')).toBeNull();
   });
 });
 

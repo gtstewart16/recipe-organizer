@@ -2,6 +2,8 @@ import { SupabaseClient } from '@supabase/supabase-js';
 
 import { ImportJob, ImportJobDraft, RecipeBookState, RecipeDraft, RecipeRecord } from '../store/recipe-book';
 
+import { RECIPE_PHOTO_BUCKET, recipePhotoReference, resolveCloudRecipePhoto, uploadRecipePhoto } from './recipe-photo-storage';
+
 const DEFAULT_HOUSEHOLD_NAME = 'The Kitchen';
 const DEFAULT_GROUP_NAMES = ['Weeknight', 'Weekend', 'Healthy'];
 
@@ -25,6 +27,7 @@ type RecipeRow = {
   title: string;
   description?: string;
   heroImageUri?: string;
+  heroImageStoragePath?: string;
   sourceUrl?: string;
   sourceType: RecipeDraft['sourceType'];
   sourcePhotoUris: string[];
@@ -64,6 +67,7 @@ export type RecipeBookPersistence = {
   listRecipes(householdId: string): Promise<RecipeRow[]>;
   insertRecipe(householdId: string, draft: RecipeDraft): Promise<RecipeRow>;
   updateRecipe(recipeId: string, draft: RecipeDraft): Promise<void>;
+  replaceRecipePhoto(recipeId: string, uri: string, mimeType?: string): Promise<void>;
   deleteRecipe(recipeId: string): Promise<void>;
   listMemberships(groupIds: string[]): Promise<RecipeBookState['memberships']>;
   replaceMemberships(recipeId: string, groupIds: string[]): Promise<void>;
@@ -79,6 +83,7 @@ export type RecipeBookRepository = {
   deleteGroup(groupId: string): Promise<RecipeBookState>;
   importRecipe(draft: RecipeDraft, groupIds: string[]): Promise<RecipeBookState>;
   updateRecipe(recipeId: string, draft: RecipeDraft, groupIds: string[]): Promise<RecipeBookState>;
+  replaceRecipePhoto(recipeId: string, uri: string, mimeType?: string): Promise<RecipeBookState>;
   deleteRecipe(recipeId: string): Promise<RecipeBookState>;
   upsertImportJob(job: ImportJob): Promise<RecipeBookState>;
 };
@@ -160,6 +165,11 @@ export function createRecipeBookRepository(persistence: RecipeBookPersistence): 
         throw error;
       }
 
+      return loadRecipeBookState(persistence, household.id);
+    },
+    replaceRecipePhoto: async (recipeId, uri, mimeType) => {
+      const household = await ensureHousehold(persistence);
+      await persistence.replaceRecipePhoto(recipeId, uri, mimeType);
       return loadRecipeBookState(persistence, household.id);
     },
     deleteRecipe: async (recipeId: string): Promise<RecipeBookState> => {
@@ -264,7 +274,10 @@ export function createSupabaseRecipeBookPersistence(client: SupabaseClient): Rec
         throw error;
       }
 
-      return (data ?? []).map(mapRecipeRow);
+      return Promise.all((data ?? []).map(async (row) => {
+        const recipe = mapRecipeRow(row);
+        return { ...recipe, ...await resolveCloudRecipePhoto(client, recipe.heroImageUri) };
+      }));
     },
     async insertRecipe(householdId, draft) {
       const { data, error } = await client
@@ -288,6 +301,18 @@ export function createSupabaseRecipeBookPersistence(client: SupabaseClient): Rec
         .eq('id', recipeId);
 
       if (error) {
+        throw error;
+      }
+    },
+    async replaceRecipePhoto(recipeId, uri, mimeType) {
+      const photo = await uploadRecipePhoto(client, recipeId, uri, mimeType);
+      const { error } = await client.from('recipes').update({
+        hero_image_url: recipePhotoReference(photo),
+        updated_at: new Date().toISOString(),
+      }).eq('id', recipeId).select('id').single();
+      if (error) {
+        const cleanup = await client.storage.from(RECIPE_PHOTO_BUCKET).remove([photo.heroImageStoragePath]);
+        if (cleanup.error) console.warn('Unused recipe photo could not be removed:', cleanup.error.message);
         throw error;
       }
     },
@@ -483,6 +508,7 @@ function mapStateRecipe(recipe: RecipeRow): RecipeRecord {
     title: recipe.title,
     description: recipe.description,
     heroImageUri: recipe.heroImageUri,
+    heroImageStoragePath: recipe.heroImageStoragePath,
     sourceUrl: recipe.sourceUrl,
     sourceType: recipe.sourceType,
     sourcePhotoUris: recipe.sourcePhotoUris,
@@ -518,7 +544,7 @@ function mapRecipeDraftForInsert(householdId: string, draft: RecipeDraft) {
     household_id: householdId,
     title: draft.title,
     description: draft.description ?? null,
-    hero_image_url: draft.heroImageUri ?? null,
+    hero_image_url: recipePhotoReference(draft),
     source_url: draft.sourceUrl ?? null,
     source_type: draft.sourceType,
     source_photo_uris: draft.sourcePhotoUris,
@@ -535,7 +561,7 @@ function mapRecipeDraftForUpdate(draft: RecipeDraft) {
   return {
     title: draft.title,
     description: draft.description ?? null,
-    hero_image_url: draft.heroImageUri ?? null,
+    hero_image_url: recipePhotoReference(draft),
     source_url: draft.sourceUrl ?? null,
     source_type: draft.sourceType,
     source_photo_uris: draft.sourcePhotoUris,

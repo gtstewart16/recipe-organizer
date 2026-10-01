@@ -6,6 +6,8 @@ export type RecipeDraft = {
   title: string;
   description?: string;
   heroImageUri?: string;
+  heroImageStoragePath?: string;
+  heroImageLocalPath?: string;
   sourceUrl?: string;
   sourceType: RecipeSourceType;
   sourcePhotoUris: string[];
@@ -61,6 +63,7 @@ export type RecipeBookState = {
 
 export type RecipeBookAction =
   | { type: 'state/hydrated'; payload: RecipeBookState }
+  | { type: 'recipe/photoReplaced'; payload: { recipeId: string; heroImageUri: string; heroImageLocalPath: string } }
   | { type: 'group/created'; payload: RecipeGroup }
   | { type: 'group/renamed'; payload: RecipeGroup }
   | { type: 'group/favoriteToggled'; payload: { id: string; isFavorite: boolean } }
@@ -265,6 +268,13 @@ export function recipeBookReducer(
             recipeId: action.payload.recipeId,
           })),
         ],
+      };
+    case 'recipe/photoReplaced':
+      return {
+        ...state,
+        recipes: state.recipes.map(recipe => recipe.id === action.payload.recipeId
+          ? { ...recipe, heroImageUri: action.payload.heroImageUri, heroImageLocalPath: action.payload.heroImageLocalPath, heroImageStoragePath: undefined, updatedAt: new Date().toISOString() }
+          : recipe),
       };
     case 'recipe/deleted':
       return {

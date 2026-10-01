@@ -1,3 +1,4 @@
+import { copyRecipePhoto, resolveLocalRecipePhoto } from './src/lib/recipe-photo-storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -115,6 +116,7 @@ export default function App() {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [lastImportSourceType, setLastImportSourceType] = useState<ImportFeedbackSourceType | null>(null);
   const [lastPhotoMode, setLastPhotoMode] = useState<'camera' | 'library'>('library');
+  const [isReplacingRecipePhoto, setIsReplacingRecipePhoto] = useState(false);
   const previousRefreshTargetRef = useRef<string | null>(null);
   const skipNextAutoRefreshTargetRef = useRef<string | null>(null);
   const didHandleInitialUrlRef = useRef(false);
@@ -166,7 +168,7 @@ export default function App() {
         }
 
         const parsed = JSON.parse(value) as RecipeBookState;
-        dispatch({ type: 'state/hydrated', payload: parsed });
+        dispatch({ type: 'state/hydrated', payload: { ...parsed, recipes: parsed.recipes.map(resolveLocalRecipePhoto) } });
       })
       .catch(() => {
         // Keep seed data if persistence is unavailable.
@@ -1080,6 +1082,8 @@ export default function App() {
       title: reviewDraft.title.trim() || 'Untitled Recipe',
       description: reviewDraft.description?.trim(),
       heroImageUri: reviewDraft.heroImageUri,
+      heroImageStoragePath: reviewDraft.heroImageStoragePath,
+      heroImageLocalPath: reviewDraft.heroImageLocalPath,
       sourceType: reviewDraft.sourceType,
       sourceUrl: reviewDraft.sourceUrl?.trim(),
       sourcePhotoUris: reviewDraft.sourcePhotoUris,
@@ -1205,6 +1209,8 @@ export default function App() {
       title: recipe.title,
       description: recipe.description,
       heroImageUri: recipe.heroImageUri,
+      heroImageStoragePath: recipe.heroImageStoragePath,
+      heroImageLocalPath: recipe.heroImageLocalPath,
       sourceType: recipe.sourceType,
       sourceUrl: recipe.sourceUrl,
       sourcePhotoUris: recipe.sourcePhotoUris,
@@ -1221,6 +1227,40 @@ export default function App() {
     setActiveImportJobId(null);
     setSelectedRecipeId(null);
     setActiveTab('add');
+  };
+
+  const replaceRecipePhoto = async (recipe: RecipeRecord) => {
+    setIsReplacingRecipePhoto(true);
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        allowsMultipleSelection: false,
+        mediaTypes: ['images'],
+        quality: 0.9,
+      });
+
+      if (result.canceled || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      if (cloudRepository) {
+        const nextState = await cloudRepository.replaceRecipePhoto(recipe.id, asset.uri, asset.mimeType);
+        dispatch({ type: 'state/hydrated', payload: nextState });
+        markCloudSyncSuccess();
+      } else {
+        const photo = await copyRecipePhoto(recipe.id, asset.uri);
+        dispatch({ type: 'recipe/photoReplaced', payload: { recipeId: recipe.id, ...photo } });
+      }
+    } catch (error) {
+      Alert.alert(
+        'Could not replace photo',
+        error instanceof Error ? error.message : 'We could not open or save that photo. Please try again.'
+      );
+    } finally {
+      setIsReplacingRecipePhoto(false);
+    }
   };
 
   const handleDeleteRecipe = async (recipeId: string) => {
@@ -1622,6 +1662,8 @@ export default function App() {
               onClose={() => setSelectedRecipeId(null)}
               onEdit={() => beginRecipeEdit(selectedRecipe)}
               onDelete={() => confirmDeleteRecipe(selectedRecipe)}
+              onReplacePhoto={() => void replaceRecipePhoto(selectedRecipe)}
+              isReplacingPhoto={isReplacingRecipePhoto}
               onOpenSource={
                 selectedRecipe.sourceUrl ? () => Linking.openURL(selectedRecipe.sourceUrl!) : undefined
               }
