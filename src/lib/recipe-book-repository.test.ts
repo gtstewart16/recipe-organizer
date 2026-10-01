@@ -227,6 +227,7 @@ describe('recipe book repository', () => {
       async insertRecipe() {
         throw new Error('not expected');
       },
+      async replaceRecipePhoto() {},
       async updateRecipe() {},
       async deleteRecipe() {},
       async listMemberships() {
@@ -468,6 +469,10 @@ function createInMemoryPersistence(options?: { seedGroups?: string[] }): RecipeB
           updatedAt: now,
         });
       }
+    },
+    async replaceRecipePhoto(recipeId: string, uri: string) {
+      const recipe = recipes.find(item => item.id === recipeId);
+      if (recipe) recipe.heroImageUri = uri;
     },
     async deleteRecipe(recipeId: string) {
       const index = recipes.findIndex((recipe) => recipe.id === recipeId);

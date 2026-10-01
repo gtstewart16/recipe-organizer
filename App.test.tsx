@@ -163,6 +163,7 @@ const mockRepository = {
     ...(job.status === 'saved' ? importedCloudState : mockCloudState),
     importJobs: [job],
   })),
+  replaceRecipePhoto: jest.fn(async () => mockCloudState),
   updateRecipe: jest.fn(async () => mockCloudState),
   deleteRecipe: jest.fn(async () => ({
     ...mockCloudState,
@@ -1524,7 +1525,7 @@ describe('Recipe Organizer app', () => {
       recipes: [recipeWithPhoto],
     };
     mockRepository.loadState.mockResolvedValue(stateWithPhoto);
-    mockRepository.updateRecipe.mockResolvedValue({
+    mockRepository.replaceRecipePhoto.mockResolvedValue({
       ...stateWithPhoto,
       recipes: [{ ...recipeWithPhoto, heroImageUri: 'file:///cookbook-page.jpg' }],
     });
@@ -1549,10 +1550,44 @@ describe('Recipe Organizer app', () => {
       mediaTypes: ['images'],
       quality: 0.9,
     });
-    expect(mockRepository.updateRecipe).toHaveBeenCalledWith(
-      'recipe-1',
-      expect.objectContaining({ heroImageUri: 'file:///cookbook-page.jpg' }),
-      ['group-weeknight', 'group-healthy']
-    );
+    expect(mockRepository.replaceRecipePhoto).toHaveBeenCalledWith('recipe-1', 'file:///cookbook-page.jpg', 'image/jpeg');
+    expect(mockRepository.updateRecipe).not.toHaveBeenCalled();
   });
+
+  it.each(['cancel', 'failure'] as const)('keeps the original photo after picker %s', async (outcome) => {
+    // Given
+    const originalUri = 'https://images.example.com/original.jpg';
+    mockRepository.loadState.mockResolvedValue({ ...mockCloudState, recipes: [{ ...mockCloudState.recipes[0], heroImageUri: originalUri }] });
+    const picker = jest.requireMock('expo-image-picker') as { launchImageLibraryAsync: jest.Mock };
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    if (outcome === 'cancel') picker.launchImageLibraryAsync.mockResolvedValueOnce({ canceled: true, assets: null });
+    else mockRepository.replaceRecipePhoto.mockRejectedValueOnce(new Error('Upload failed'));
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    fireEvent.press(screen.getByText('Jalapeño Popper Turkey Burgers'));
+    fireEvent.press(await screen.findByLabelText('View recipe photo'));
+    // When
+    await act(async () => { fireEvent.press(screen.getByLabelText('Replace recipe photo')); });
+    // Then
+    expect(screen.getByTestId('recipe-detail-hero-image')).toHaveProp('source', { uri: originalUri });
+    expect(mockRepository.updateRecipe).not.toHaveBeenCalled();
+    if (outcome === 'cancel') expect(mockRepository.replaceRecipePhoto).not.toHaveBeenCalled();
+    else expect(alert).toHaveBeenCalledWith('Could not replace photo', 'Upload failed');
+    alert.mockRestore();
+  });
+
+  it('preserves the canonical photo reference when editing a recipe with a signed image', async () => {
+    // Given
+    mockRepository.loadState.mockResolvedValue({ ...mockCloudState, recipes: [{ ...mockCloudState.recipes[0], heroImageUri: 'https://example.com/signed?token=temporary', heroImageStoragePath: 'recipe-1/saved.jpg' }] });
+    await renderAppToSignInGate();
+    await signInToLibrary();
+    fireEvent.press(screen.getByText('Jalapeño Popper Turkey Burgers'));
+    // When
+    fireEvent.press(await screen.findByText('Edit recipe'));
+    fireEvent.changeText(screen.getByDisplayValue('Jalapeño Popper Turkey Burgers'), 'New title');
+    fireEvent.press(screen.getByText('Confirm recipe'));
+    // Then
+    await waitFor(() => expect(mockRepository.updateRecipe).toHaveBeenCalledWith('recipe-1', expect.objectContaining({ title: 'New title', heroImageStoragePath: 'recipe-1/saved.jpg' }), expect.any(Array)));
+  });
+
 });

@@ -7,6 +7,7 @@ Kitchen Shelf is a mobile-first, recipe-only organizer for a shared household. T
 - Shared household sign-in gate with a device-local persisted session.
 - Recipes, Groups, and Add tabs optimized for phone use.
 - Shared recipe library with search, detail, edit, delete, and source-opening flows.
+- Full-screen recipe photos with replacement from the photo library. Local replacements are copied to document storage; cloud replacements use private Supabase Storage with fresh signed display links.
 - Custom groups with create, rename, delete, favorites, and many-to-many recipe membership.
 - Paste-a-link, shared-text, camera, and photo-library import entry points.
 - Review-before-save import flow plus retryable import history for failed, in-review, and saved jobs.
@@ -95,6 +96,8 @@ The app can run locally without Supabase credentials. To enable shared sync and 
    ```
 
 2. Apply the SQL migrations in `supabase/migrations` in timestamp order.
+
+   Photo replacement requires the `recipe_photo_storage` migration before distributing the updated client. It creates the private `recipe-photos` bucket with a 10 MB image limit. Storage access follows the existing shared recipe access model; the current household sign-in gate is not Supabase Auth or per-user authorization.
 
 3. Configure edge-function secrets:
 

@@ -1,3 +1,4 @@
+import { copyRecipePhoto, resolveLocalRecipePhoto } from './src/lib/recipe-photo-storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -167,7 +168,7 @@ export default function App() {
         }
 
         const parsed = JSON.parse(value) as RecipeBookState;
-        dispatch({ type: 'state/hydrated', payload: parsed });
+        dispatch({ type: 'state/hydrated', payload: { ...parsed, recipes: parsed.recipes.map(resolveLocalRecipePhoto) } });
       })
       .catch(() => {
         // Keep seed data if persistence is unavailable.
@@ -1081,6 +1082,8 @@ export default function App() {
       title: reviewDraft.title.trim() || 'Untitled Recipe',
       description: reviewDraft.description?.trim(),
       heroImageUri: reviewDraft.heroImageUri,
+      heroImageStoragePath: reviewDraft.heroImageStoragePath,
+      heroImageLocalPath: reviewDraft.heroImageLocalPath,
       sourceType: reviewDraft.sourceType,
       sourceUrl: reviewDraft.sourceUrl?.trim(),
       sourcePhotoUris: reviewDraft.sourcePhotoUris,
@@ -1206,6 +1209,8 @@ export default function App() {
       title: recipe.title,
       description: recipe.description,
       heroImageUri: recipe.heroImageUri,
+      heroImageStoragePath: recipe.heroImageStoragePath,
+      heroImageLocalPath: recipe.heroImageLocalPath,
       sourceType: recipe.sourceType,
       sourceUrl: recipe.sourceUrl,
       sourcePhotoUris: recipe.sourcePhotoUris,
@@ -1239,33 +1244,14 @@ export default function App() {
         return;
       }
 
-      const updatedDraft: RecipeDraft = {
-        title: recipe.title,
-        description: recipe.description,
-        heroImageUri: result.assets[0].uri,
-        sourceType: recipe.sourceType,
-        sourceUrl: recipe.sourceUrl,
-        sourcePhotoUris: recipe.sourcePhotoUris,
-        ingredients: recipe.ingredients,
-        instructions: recipe.instructions,
-        servings: recipe.servings,
-        prepTime: recipe.prepTime,
-        cookTime: recipe.cookTime,
-        status: recipe.status,
-      };
-      const groupIds = state.memberships
-        .filter((membership) => membership.recipeId === recipe.id)
-        .map((membership) => membership.groupId);
-
+      const asset = result.assets[0];
       if (cloudRepository) {
-        const nextState = await cloudRepository.updateRecipe(recipe.id, updatedDraft, groupIds);
+        const nextState = await cloudRepository.replaceRecipePhoto(recipe.id, asset.uri, asset.mimeType);
         dispatch({ type: 'state/hydrated', payload: nextState });
         markCloudSyncSuccess();
       } else {
-        dispatch({
-          type: 'recipe/updated',
-          payload: { recipeId: recipe.id, draft: updatedDraft, groupIds },
-        });
+        const photo = await copyRecipePhoto(recipe.id, asset.uri);
+        dispatch({ type: 'recipe/photoReplaced', payload: { recipeId: recipe.id, ...photo } });
       }
     } catch (error) {
       Alert.alert(
