@@ -31,6 +31,29 @@ const recipe = {
 };
 
 describe('RecipeDetailScreen', () => {
+  it.each([undefined, ''])('opens photo actions when the image is %s', (heroImageUri) => {
+    const onReplacePhoto = jest.fn();
+    render(
+      <RecipeDetailScreen
+        recipe={{ ...recipe, heroImageUri }}
+        onClose={jest.fn()}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+        onReplacePhoto={onReplacePhoto}
+      />
+    );
+
+    fireEvent.press(screen.getByTestId('recipe-detail-hero-fallback'));
+
+    expect(screen.getByTestId('recipe-photo-viewer')).toBeTruthy();
+    expect(screen.getByText('No photo yet')).toBeTruthy();
+    expect(screen.queryByLabelText(`${recipe.title} full photo`)).toBeNull();
+    fireEvent.press(screen.getByLabelText('Add recipe photo'));
+    expect(onReplacePhoto).toHaveBeenCalledTimes(1);
+    fireEvent.press(screen.getByLabelText('Close full photo'));
+    expect(screen.queryByTestId('recipe-photo-viewer')).toBeNull();
+  });
+
   it('uses light status icons only while the dark photo viewer is open', () => {
     const push = jest.spyOn(StatusBar, 'pushStackEntry');
     const pop = jest.spyOn(StatusBar, 'popStackEntry');
