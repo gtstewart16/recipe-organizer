@@ -15,7 +15,8 @@ const fractions: Record<string, number> = {
 const glyphs = Object.keys(fractions).join('');
 const quantity = `(?:\\d+[ -]+\\d+\\s*[/⁄]\\s*\\d+|\\d+\\s*[/⁄]\\s*\\d+|\\d*\\s*[${glyphs}]|\\d+(?:\\.\\d+)?|\\.\\d+)`;
 const leadingQuantity = new RegExp(`^(\\s*)(${quantity})(?:(\\s*(?:[-–—]|to)\\s*)(${quantity}))?(.*)$`, 'i');
-const compoundAmount = new RegExp(`^(.*?)(\\s+(?:plus|and)\\s+)(?=${quantity}\\s*(?:cups?|tbsp|tsp|tablespoons?|teaspoons?|ml|g|kg|oz|lb|pounds?|ounces?|eggs?|yolks?)\\b)(.+)$`, 'i');
+const amount = `${quantity}(?:\\s*(?:[-–—]|to)\\s*${quantity})?`;
+const compoundAmount = new RegExp(`(\\s+(?:plus|and)\\s+)(?=${amount}\\s*(?:cups?|tbsp|tsp|tablespoons?|teaspoons?|ml|g|kg|oz|lb|pounds?|ounces?|eggs?|yolks?)\\b)`, 'gi');
 
 function readQuantity(text: string): number {
   const glyph = text.trim().slice(-1);
@@ -35,9 +36,17 @@ function formatQuantity(value: number): string {
 /** Only the leading amount is scaled; package sizes and preparation text stay intact. */
 export function scaleIngredient(ingredient: string, factor: number): string {
   if (factor === 1 || !Number.isFinite(factor) || factor <= 0) return ingredient;
-  const compound = ingredient.match(compoundAmount);
-  if (compound) {
-    return `${scaleIngredient(compound[1], factor)}${compound[2]}${scaleIngredient(compound[3], factor)}`;
+  let depth = 0;
+  let cursor = 0;
+  for (const compound of ingredient.matchAll(compoundAmount)) {
+    for (; cursor < compound.index; cursor += 1) {
+      if (ingredient[cursor] === '(') depth += 1;
+      if (ingredient[cursor] === ')') depth = Math.max(0, depth - 1);
+    }
+    if (depth !== 0) continue;
+    const before = ingredient.slice(0, compound.index);
+    const after = ingredient.slice(compound.index + compound[0].length);
+    return `${scaleIngredient(before, factor)}${compound[0]}${scaleIngredient(after, factor)}`;
   }
   const match = ingredient.match(leadingQuantity);
   if (!match) return ingredient;

@@ -11,6 +11,15 @@ describe('parseServings', () => {
 
 describe('scaleIngredient', () => {
   it.each([
+    ['150 g flour (1 cup plus 2 tbsp)', '300 g flour (1 cup plus 2 tbsp)'],
+    ['150 g flour (1 cup (sifted) plus 2 tbsp) plus 1 tbsp', '300 g flour (1 cup (sifted) plus 2 tbsp) plus 2 tbsp'],
+    ['1 cup flour plus 1–2 tbsp for dusting', '2 cup flour plus 2–4 tbsp for dusting'],
+    ['1 cup flour and 1/2 to 1 tbsp for dusting', '2 cup flour and 1 to 2 tbsp for dusting'],
+    ['1 cup flour plus ½–¾ cup milk plus 1 egg', '2 cup flour plus 1–1.5 cup milk plus 2 egg'],
+  ])('scales outer compound amounts while preserving parentheses: %s', (input, expected) => {
+    expect(scaleIngredient(input, 2)).toBe(expected);
+  });
+  it.each([
     ['1 lb ground turkey', '1.33 lb ground turkey'],
     ['1/2 tsp salt', '0.67 tsp salt'],
     ['¼ cup yogurt', '0.33 cup yogurt'],
