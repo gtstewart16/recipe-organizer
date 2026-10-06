@@ -257,7 +257,12 @@ public class AppDelegate: ExpoAppDelegate {
 
     expect(patched).toContain('import UIKit');
     expect(patched).toContain('let linkingResult = RCTLinkingManager.application(app, open: url, options: options)');
-    expect(patched).toContain('return linkingResult || super.application(app, open: url, options: options)');
+    expect(patched).toContain('let expoResult = super.application(app, open: url, options: options)');
+    expect(patched).toContain('return linkingResult || expoResult');
+    expect(patchAppDelegateForPendingShares(
+      patched, 'kitchenshelf', 'com.gtstewart16.recipeorganizer.pending-share',
+      'group.com.gtstewart16.recipeorganizer', 'pending-share-url'
+    )).toBe(patched);
     expect(patched).toContain('private let kitchenShelfPendingSharePasteboardPrefix = "kitchenshelf://share"');
     expect(patched).toContain('private let kitchenShelfShareAppGroupIdentifier = "group.com.gtstewart16.recipeorganizer"');
     expect(patched).toContain('private let kitchenShelfPendingShareDefaultsKey = "pending-share-url"');

@@ -448,6 +448,11 @@ function patchAppDelegateForPendingShares(contents, appScheme, pasteboardName, a
     `let linkingResult = RCTLinkingManager.application(app, open: url, options: options)
     return linkingResult || super.application(app, open: url, options: options)`
   );
+  nextContents = nextContents.replace(
+    'return linkingResult || super.application(app, open: url, options: options)',
+    `let expoResult = super.application(app, open: url, options: options)
+    return linkingResult || expoResult`
+  );
 
   if (!nextContents.includes('kitchenShelfPendingSharePasteboardPrefix')) {
     nextContents = nextContents.replace(
