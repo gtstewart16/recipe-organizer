@@ -8,8 +8,11 @@ import { colors, radius, shadows, spacing, type } from '../../theme';
 import { formatRecipeDuration } from '../../lib/duration';
 import { RecipeDirectionsSection } from './RecipeDirectionsSection';
 import { RecipeIngredientsSection } from './RecipeIngredientsSection';
+import { RecipeServingControl } from './RecipeServingControl';
+import { parseServings, scaleIngredient } from '../../lib/serving-scaling';
 
 export type RecipeDetailRecipe = {
+  id?: string;
   title: string;
   description?: string;
   heroImageUri?: string;
@@ -43,11 +46,16 @@ export function RecipeDetailScreen({
   isReplacingPhoto = false,
 }: RecipeDetailScreenProps) {
   const [isPhotoOpen, setIsPhotoOpen] = useState(false);
+  const baseServings = parseServings(recipe.servings);
+  const scalingKey = JSON.stringify([recipe.id, recipe.title, recipe.servings, recipe.ingredients]);
+  const [selection, setSelection] = useState<{ key: string; count: number } | null>(null);
+  if (selection !== null && selection.key !== scalingKey) setSelection(null);
+  const servingCount = selection?.key === scalingKey ? selection.count : baseServings;
+  const factor = servingCount !== null && baseServings !== null ? servingCount / baseServings : 1;
   const insets = useContext(SafeAreaInsetsContext) ?? { top: 0, right: 0, bottom: 0, left: 0 };
   const safeTopInset = insets.top > 0 ? insets.top : 44;
   const closeOffsetTop = safeTopInset + 14;
   const metadataItems = [
-    { label: 'Servings', value: recipe.servings ?? '—' },
     { label: 'Prep', value: formatRecipeDuration(recipe.prepTime) ?? '—' },
     { label: 'Cook', value: formatRecipeDuration(recipe.cookTime) ?? '—' },
   ];
@@ -97,6 +105,12 @@ export function RecipeDetailScreen({
         </View>
 
         <View style={styles.body}>
+          <RecipeServingControl
+            original={recipe.servings}
+            base={baseServings}
+            count={servingCount}
+            onChange={(count) => setSelection({ key: scalingKey, count })}
+          />
           <View style={styles.metadataGrid}>
             {metadataItems.map((item) => (
               <View key={item.label} style={styles.metadataCard}>
@@ -145,7 +159,7 @@ export function RecipeDetailScreen({
             </View>
           ) : null}
 
-          <RecipeIngredientsSection ingredients={recipe.ingredients} />
+          <RecipeIngredientsSection ingredients={recipe.ingredients.map((ingredient) => scaleIngredient(ingredient, factor))} />
           <RecipeDirectionsSection instructions={recipe.instructions} />
         </View>
       </ScrollView>
