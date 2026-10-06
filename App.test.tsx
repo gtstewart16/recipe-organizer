@@ -1515,10 +1515,10 @@ describe('Recipe Organizer app', () => {
     alertSpy.mockRestore();
   });
 
-  it('replaces a recipe photo from the full-screen viewer and persists the change', async () => {
+  it.each([true, false])('saves a recipe photo from the viewer (existing photo: %s)', async (hasPhoto) => {
     const recipeWithPhoto = {
       ...mockCloudState.recipes[0],
-      heroImageUri: 'https://images.example.com/original-burger.jpg',
+      heroImageUri: hasPhoto ? 'https://images.example.com/original-burger.jpg' : undefined,
     };
     const stateWithPhoto = {
       ...mockCloudState,
@@ -1537,11 +1537,11 @@ describe('Recipe Organizer app', () => {
     await signInToLibrary();
 
     fireEvent.press(screen.getByText('Jalapeño Popper Turkey Burgers'));
-    fireEvent.press(await screen.findByLabelText('View recipe photo'));
+    fireEvent.press(await screen.findByLabelText(hasPhoto ? 'View recipe photo' : 'Open recipe photo options'));
     expect(screen.getByTestId('recipe-photo-viewer')).toBeTruthy();
 
     await act(async () => {
-      fireEvent.press(screen.getByLabelText('Replace recipe photo'));
+      fireEvent.press(screen.getByLabelText(hasPhoto ? 'Replace recipe photo' : 'Add recipe photo'));
     });
 
     expect(imagePicker.launchImageLibraryAsync).toHaveBeenCalledWith({
@@ -1552,11 +1552,19 @@ describe('Recipe Organizer app', () => {
     });
     expect(mockRepository.replaceRecipePhoto).toHaveBeenCalledWith('recipe-1', 'file:///cookbook-page.jpg', 'image/jpeg');
     expect(mockRepository.updateRecipe).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(`${recipeWithPhoto.title} full photo`)).toHaveProp('source', {
+      uri: 'file:///cookbook-page.jpg',
+    });
   });
 
-  it.each(['cancel', 'failure'] as const)('keeps the original photo after picker %s', async (outcome) => {
+  it.each([
+    { outcome: 'cancel', hasPhoto: true },
+    { outcome: 'failure', hasPhoto: true },
+    { outcome: 'cancel', hasPhoto: false },
+    { outcome: 'failure', hasPhoto: false },
+  ])('keeps the photo state after $outcome (existing photo: $hasPhoto)', async ({ outcome, hasPhoto }) => {
     // Given
-    const originalUri = 'https://images.example.com/original.jpg';
+    const originalUri = hasPhoto ? 'https://images.example.com/original.jpg' : undefined;
     mockRepository.loadState.mockResolvedValue({ ...mockCloudState, recipes: [{ ...mockCloudState.recipes[0], heroImageUri: originalUri }] });
     const picker = jest.requireMock('expo-image-picker') as { launchImageLibraryAsync: jest.Mock };
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
@@ -1565,11 +1573,16 @@ describe('Recipe Organizer app', () => {
     await renderAppToSignInGate();
     await signInToLibrary();
     fireEvent.press(screen.getByText('Jalapeño Popper Turkey Burgers'));
-    fireEvent.press(await screen.findByLabelText('View recipe photo'));
+    fireEvent.press(await screen.findByLabelText(hasPhoto ? 'View recipe photo' : 'Open recipe photo options'));
     // When
-    await act(async () => { fireEvent.press(screen.getByLabelText('Replace recipe photo')); });
+    await act(async () => { fireEvent.press(screen.getByLabelText(hasPhoto ? 'Replace recipe photo' : 'Add recipe photo')); });
     // Then
-    expect(screen.getByTestId('recipe-detail-hero-image')).toHaveProp('source', { uri: originalUri });
+    if (hasPhoto) expect(screen.getByTestId('recipe-detail-hero-image')).toHaveProp('source', { uri: originalUri });
+    else {
+      expect(screen.getByTestId('recipe-detail-hero-fallback')).toBeTruthy();
+      expect(screen.getByLabelText('Add recipe photo')).toBeEnabled();
+      expect(screen.getByText('No photo yet')).toBeTruthy();
+    }
     expect(mockRepository.updateRecipe).not.toHaveBeenCalled();
     if (outcome === 'cancel') expect(mockRepository.replaceRecipePhoto).not.toHaveBeenCalled();
     else expect(alert).toHaveBeenCalledWith('Could not replace photo', 'Upload failed');

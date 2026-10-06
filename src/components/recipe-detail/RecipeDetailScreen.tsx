@@ -78,9 +78,16 @@ export function RecipeDetailScreen({
               </ImageBackground>
             </InteractivePressable>
           ) : (
-            <View testID="recipe-detail-hero-fallback" style={styles.heroFallback}>
-              <Text style={styles.heroTitle}>{recipe.title}</Text>
-            </View>
+            <InteractivePressable
+              accessibilityHint="Opens photo options to add a recipe photo"
+              accessibilityLabel="Open recipe photo options"
+              onPress={() => setIsPhotoOpen(true)}
+              testID="recipe-detail-hero-fallback"
+              style={styles.heroFallback}
+            >
+              <Text style={[styles.heroTitle, styles.fallbackText]}>{recipe.title}</Text>
+              <Text style={[styles.photoHint, styles.fallbackText]}>Tap to add photo</Text>
+            </InteractivePressable>
           )}
 
           <View style={[styles.heroChrome, { top: closeOffsetTop }]} testID="recipe-detail-close-chrome">
@@ -150,45 +157,47 @@ export function RecipeDetailScreen({
         </View>
       </ScrollView>
 
-      {recipe.heroImageUri ? (
-        <Modal
-          animationType="fade"
-          onRequestClose={() => setIsPhotoOpen(false)}
-          presentationStyle="fullScreen"
-          visible={isPhotoOpen}
-        >
-          <View style={styles.photoViewer} testID="recipe-photo-viewer">
-            {isPhotoOpen ? <StatusBar style="light" /> : null}
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setIsPhotoOpen(false)}
+        presentationStyle="fullScreen"
+        visible={isPhotoOpen}
+      >
+        <View style={styles.photoViewer} testID="recipe-photo-viewer">
+          {isPhotoOpen ? <StatusBar style="light" /> : null}
+          {recipe.heroImageUri ? (
             <Image
               accessibilityLabel={`${recipe.title} full photo`}
               resizeMode="contain"
               source={{ uri: recipe.heroImageUri }}
               style={styles.fullPhoto}
             />
-            <View style={[styles.photoViewerTop, { paddingTop: safeTopInset + spacing.sm }]}>
-              <InteractivePressable
-                accessibilityLabel="Close full photo"
-                onPress={() => setIsPhotoOpen(false)}
-                style={styles.viewerCloseButton}
-              >
-                <Text style={styles.viewerCloseLabel}>×</Text>
-              </InteractivePressable>
-            </View>
-            <View style={[styles.photoViewerActions, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
-              <InteractivePressable
-                accessibilityLabel="Replace recipe photo"
-                disabled={isReplacingPhoto}
-                onPress={onReplacePhoto}
-                style={styles.replacePhotoButton}
-              >
-                <Text style={styles.replacePhotoLabel}>
-                  {isReplacingPhoto ? 'Opening photo library…' : 'Replace photo'}
-                </Text>
-              </InteractivePressable>
-            </View>
+          ) : (
+            <Text style={styles.emptyPhotoLabel}>No photo yet</Text>
+          )}
+          <View style={[styles.photoViewerTop, { paddingTop: safeTopInset + spacing.sm }]}>
+            <InteractivePressable
+              accessibilityLabel="Close full photo"
+              onPress={() => setIsPhotoOpen(false)}
+              style={styles.viewerCloseButton}
+            >
+              <Text style={styles.viewerCloseLabel}>×</Text>
+            </InteractivePressable>
           </View>
-        </Modal>
-      ) : null}
+          <View style={[styles.photoViewerActions, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
+            <InteractivePressable
+              accessibilityLabel={recipe.heroImageUri ? 'Replace recipe photo' : 'Add recipe photo'}
+              disabled={isReplacingPhoto}
+              onPress={onReplacePhoto}
+              style={styles.replacePhotoButton}
+            >
+              <Text style={styles.replacePhotoLabel}>
+                {isReplacingPhoto ? 'Opening photo library…' : recipe.heroImageUri ? 'Replace photo' : 'Add photo'}
+              </Text>
+            </InteractivePressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -232,6 +241,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: radius.xxl,
     borderBottomRightRadius: radius.xxl,
     justifyContent: 'flex-end',
+    gap: spacing.xs,
     minHeight: 320,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xxl,
@@ -271,6 +281,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     opacity: 0.9,
+  },
+  fallbackText: {
+    color: colors.text,
+    textShadowRadius: 0,
+  },
+  emptyPhotoLabel: {
+    color: colors.white,
+    ...type.title,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xl,
   },
   photoViewer: {
     backgroundColor: colors.text,
