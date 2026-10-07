@@ -10,7 +10,7 @@ Compute ingredient quantities from the original text and the ratio of selected t
 
 Keep ingredient names, preparation text, package sizes, section headings, and unquantified items such as “salt to taste” intact. Dimension prefixes such as “1-inch” and unsupported quantities remain unchanged. This is a conservative text parser, not a full natural-language ingredient interpreter: other quantities embedded later in a sentence, parenthetical alternative measurements, spelled-out numbers, and thousands separators are not scaled.
 
-Accept a whole-number serving count (including “Serves 6”, “6 servings”, or “6 people”). If the count is missing, ambiguous, or outside 1–999, retain its text and show an instruction to edit it before scaling.
+Accept a whole-number serving count, optionally followed by a yield description (including “Serves 6”, “6 servings”, “6 people”, “6 stuffed artichoke bottoms”, or “12 cookies”). “Makes” and “Yield:” prefixes are also supported. The original yield text stays saved; the control displays its numeric count. If the count is missing, ambiguous, fractional, or outside 1–999, retain its text and show an instruction to edit it before scaling.
 
 Scaling is local to the open recipe view. It never writes the selected count or scaled quantities to storage. Closing/reopening, switching recipes, or changing the original ingredients/count resets scaling. Instructions and cooking times are unchanged. No database changes, unit conversion, pantry matching, or ingredient inventory are included.
 

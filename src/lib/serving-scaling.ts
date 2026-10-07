@@ -1,7 +1,9 @@
 export const MAX_SERVINGS = 999;
 
 export function parseServings(value?: string): number | null {
-  const match = value?.trim().match(/^(?:(?:serves|servings:?)\s*)?(\d+)(?:\s*(?:servings?|people))?$/i);
+  const match = value?.trim().match(
+    /^(?:(?:serves|servings|makes|yields?)\s*:?\s*)?(\d+)(?:\s+(?!(?:to|or|and)\b)[\p{L}][\p{L}\p{M}\s’'-]*)?$/iu
+  );
   const count = match ? Number(match[1]) : 0;
   return Number.isInteger(count) && count >= 1 && count <= MAX_SERVINGS ? count : null;
 }
