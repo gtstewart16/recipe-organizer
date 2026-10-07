@@ -4,7 +4,19 @@ describe('parseServings', () => {
   it.each(['6', '6 servings', 'Serves 6', ' 6 people '])('reads %s', (value) => {
     expect(parseServings(value)).toBe(6);
   });
-  it.each([undefined, '', '0', '-2', '4–6', 'about 6', '1/2', '12 cookies', '1000'])('does not guess %s', (value) => {
+  it.each([
+    ['6 stuffed artichoke bottoms', 6],
+    ['12 cookies', 12],
+    ['10 slices', 10],
+    ['6 tacos', 6],
+    ['Makes 6 stuffed artichoke bottoms', 6],
+    ['Yield: 6 stuffed artichoke bottoms', 6],
+    ['Serves 6 people', 6],
+    ['6 single-serve bowls', 6],
+  ])('reads a descriptive imported yield: %s', (value, expected) => {
+    expect(parseServings(value)).toBe(expected);
+  });
+  it.each([undefined, '', '0', '-2', '4–6', '4 - 6 servings', '4 to 6 servings', '4 or 6 servings', '4 to six servings', 'about 6', '1/2', '1 1/2 servings', '6.5 servings', '6½ servings', '1000', '6 servings of 2 pieces', '6-inch cake'])('does not guess %s', (value) => {
     expect(parseServings(value)).toBeNull();
   });
 });

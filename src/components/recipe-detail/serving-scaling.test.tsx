@@ -8,6 +8,27 @@ const recipe: RecipeDetailRecipe = {
 };
 const actions = { onClose: jest.fn(), onEdit: jest.fn(), onDelete: jest.fn(), onReplacePhoto: jest.fn() };
 
+it('shows working serving controls for an Instagram recipe with a descriptive yield', () => {
+  const importedRecipe = {
+    ...recipe,
+    title: 'Lentil & Quinoa Stuffed Artichoke Bottoms',
+    sourceUrl: 'https://www.instagram.com/p/example/',
+    servings: '6 stuffed artichoke bottoms',
+    ingredients: ['6 artichoke bottoms', '1/2 cup quinoa'],
+  };
+  render(<RecipeDetailScreen recipe={importedRecipe} {...actions} />);
+  expect(screen.getByLabelText('6 servings')).toBeTruthy();
+  expect(screen.queryByText('Edit recipe to set a serving count, then scale ingredients here.')).toBeNull();
+  fireEvent.press(screen.getByLabelText('Increase servings'));
+  expect(screen.getByLabelText('7 servings')).toBeTruthy();
+  expect(screen.getByText('7 artichoke bottoms')).toBeTruthy();
+  expect(screen.getByText('0.58 cup quinoa')).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('Decrease servings'));
+  expect(screen.getByText('6 artichoke bottoms')).toBeTruthy();
+  expect(screen.getByText('1/2 cup quinoa')).toBeTruthy();
+  expect(importedRecipe.servings).toBe('6 stuffed artichoke bottoms');
+});
+
 it('scales up and restores the original quantities without changing the saved recipe', () => {
   render(<RecipeDetailScreen recipe={recipe} {...actions} />);
   fireEvent.press(screen.getByLabelText('Increase servings'));
