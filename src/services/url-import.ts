@@ -105,7 +105,7 @@ function buildDraftFromRecipeNode(sourceUrl: string, recipeNode: JsonLdNode): Re
     heroImageUri: getImageUrl(recipeNode.image),
     ingredients: getIngredients(recipeNode.recipeIngredient),
     instructions: getInstructions(recipeNode.recipeInstructions),
-    servings: getString(recipeNode.recipeYield),
+    servings: getString(recipeNode.recipeYield) ?? getString([recipeNode.recipeYield].flat().filter((value) => typeof value === 'number').map(String)),
     prepTime: getDurationLabel(recipeNode.prepTime),
     cookTime: getDurationLabel(recipeNode.cookTime),
   };

@@ -8,6 +8,32 @@ const recipe: RecipeDetailRecipe = {
 };
 const actions = { onClose: jest.fn(), onEdit: jest.fn(), onDelete: jest.fn(), onReplacePhoto: jest.fn() };
 
+it('scales a Crunchwrap recipe imported with 4 serving(s)', () => {
+  const importedRecipe = {
+    ...recipe,
+    title: 'Crunchwrap Supreme',
+    servings: '4 serving(s)',
+    ingredients: ['1 lb ground beef', '4 tortillas', '1/2 tsp salt'],
+  };
+  render(<RecipeDetailScreen recipe={importedRecipe} {...actions} />);
+  expect(screen.getByLabelText('4 servings')).toBeTruthy();
+  expect(screen.queryByText('Edit recipe to set a serving count, then scale ingredients here.')).toBeNull();
+  fireEvent.press(screen.getByLabelText('Increase servings'));
+  expect(screen.getByLabelText('5 servings')).toBeTruthy();
+  expect(screen.getByText('1.25 lb ground beef')).toBeTruthy();
+  expect(screen.getByText('5 tortillas')).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('Reset servings'));
+  expect(screen.getByText('1/2 tsp salt')).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('Decrease servings'));
+  expect(screen.getByLabelText('3 servings')).toBeTruthy();
+  expect(screen.getByText('0.75 lb ground beef')).toBeTruthy();
+  expect(screen.getByText('3 tortillas')).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('Increase servings'));
+  expect(screen.getByText('1/2 tsp salt')).toBeTruthy();
+  expect(importedRecipe.servings).toBe('4 serving(s)');
+  expect(importedRecipe.ingredients).toEqual(['1 lb ground beef', '4 tortillas', '1/2 tsp salt']);
+});
+
 it('shows working serving controls for an Instagram recipe with a descriptive yield', () => {
   const importedRecipe = {
     ...recipe,
