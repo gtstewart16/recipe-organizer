@@ -1,6 +1,12 @@
 import { parseServings, scaleIngredient } from './serving-scaling';
 
 describe('parseServings', () => {
+  it.each(['4 serving(s)', ' 4 SERVING(S) ', 'Serves 4 serving(s)', 'Yield: 4 serving(s)'])('reads parenthesized serving plurals: %s', (value) => {
+    expect(parseServings(value)).toBe(4);
+  });
+  it.each(['4–6 serving(s)', '4 or 6 serving(s)', '4 serving(s) (2 each)', '4 serving(s) of 2 pieces', '4 serving(s', '4 serving(s))', '0 serving(s)', '1000 serving(s)'])('rejects ambiguous or invalid parenthesized yields: %s', (value) => {
+    expect(parseServings(value)).toBeNull();
+  });
   it.each(['6', '6 servings', 'Serves 6', ' 6 people '])('reads %s', (value) => {
     expect(parseServings(value)).toBe(6);
   });
